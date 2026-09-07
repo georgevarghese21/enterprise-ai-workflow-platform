@@ -20,12 +20,17 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://novatech:novatech@postgres:5432/novatech
       LLM_MODE: mock
+      # host.docker.internal (below, via extra_hosts) lets the container reach
+      # an Ollama server running on the host when LLM_MODE=ollama is set.
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
       LOG_LEVEL: INFO
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
       - ./data:/data:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy

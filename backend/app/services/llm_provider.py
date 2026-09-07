@@ -114,12 +114,51 @@ class AnthropicLLMProvider:
         return response.parsed_output
 
 
+class OllamaLLMProvider:
+    """Real classifier backed by a local Ollama server.
+
+    Genuinely free: Ollama runs the model on your own machine, no API key
+    or billing involved. Uses Ollama's structured-output support (the
+    `format` field accepts a JSON schema) so the response always validates
+    against `RequestClassification`, the same as the other providers.
+    """
+
+    def __init__(self) -> None:
+        import httpx
+
+        settings = get_settings()
+        self._base_url = settings.ollama_base_url.rstrip("/")
+        self._model = settings.ollama_model
+        self._client = httpx.Client(timeout=httpx.Timeout(60.0))
+
+    def classify(self, raw_query: str) -> RequestClassification:
+        response = self._client.post(
+            f"{self._base_url}/api/chat",
+            json={
+                "model": self._model,
+                "messages": [
+                    {"role": "system", "content": _CLASSIFICATION_SYSTEM_PROMPT},
+                    {"role": "user", "content": raw_query},
+                ],
+                "format": RequestClassification.model_json_schema(),
+                "stream": False,
+                "options": {"temperature": 0},
+            },
+        )
+        response.raise_for_status()
+        content = response.json()["message"]["content"]
+        return RequestClassification.model_validate_json(content)
+
+
 def get_llm_provider() -> LLMProvider:
     settings = get_settings()
     if settings.llm_mode == "mock":
         return MockLLMProvider()
     if settings.llm_mode == "anthropic":
         return AnthropicLLMProvider()
+    if settings.llm_mode == "ollama":
+        return OllamaLLMProvider()
     raise NotImplementedError(
-        f"LLM mode {settings.llm_mode!r} is not implemented yet; use 'mock' or 'anthropic'."
+        f"LLM mode {settings.llm_mode!r} is not implemented yet; "
+        "use 'mock', 'anthropic', or 'ollama'."
     )

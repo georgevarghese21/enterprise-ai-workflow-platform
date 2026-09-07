@@ -33,13 +33,18 @@ What exists so far:
 - An LLM provider abstraction (`app/services/llm_provider.py`) mirroring the embedding
   provider pattern: the default `mock` mode is a deterministic keyword-rule classifier
   with no external calls, and `LLM_MODE=anthropic` (with `ANTHROPIC_API_KEY` set)
-  switches to a real Claude call using structured outputs (`RequestClassification`).
+  switches to a real Claude call using structured outputs (`RequestClassification`). A
+  third mode, `LLM_MODE=ollama`, uses a locally-running [Ollama](https://ollama.com)
+  server (`ollama pull llama3.2`, no API key, genuinely free) via the same structured
+  interface. `docker-compose.yml` maps `host.docker.internal` into the backend
+  container so it can reach an Ollama server running on the host — see "Using a local
+  Ollama model" below.
 - `POST /api/requests/{request_id}/classify` — classifies a submitted request into one
   of 9 intents (data access, IT equipment/software, travel, expenses, time off, remote
   work, security incident, other), stores the result, and advances the request's status
   to `CLASSIFIED`.
-- pytest suite (24 tests) covering the API endpoints, RAG chunking/embedding/retrieval,
-  and classification built so far.
+- pytest suite (27 tests) covering the API endpoints, RAG chunking/embedding/retrieval,
+  and classification (including a network-free Ollama-provider test) built so far.
 
 Not yet implemented (later phases): LangGraph workflow, tool execution,
 human-in-the-loop approvals, audit logging, the React frontend, the evaluation
@@ -137,8 +142,36 @@ docker compose run --rm -e DATABASE_URL=postgresql+psycopg://novatech:novatech@p
 ## Environment variables
 
 See [`.env.example`](.env.example). `LLM_MODE=mock` (the default) runs the system with
-no external LLM calls — used for local dev and CI until Phase 3 introduces the real
-provider integrations.
+no external LLM calls — used for local dev and CI. `LLM_MODE=anthropic` and
+`LLM_MODE=ollama` switch on the real provider integrations added in Phase 3.
+
+## Using a local Ollama model
+
+[Ollama](https://ollama.com) runs an LLM on your own machine for free — no API key,
+no billing. To use it for classification instead of the mock or Anthropic providers:
+
+```bash
+sudo pacman -S ollama          # or the install method for your OS
+sudo systemctl enable --now ollama
+ollama pull llama3.2
+```
+
+By default Ollama only listens on `127.0.0.1`, which the backend's Docker container
+can't reach. Make it listen on all interfaces, and if you run a firewall, restrict
+that to Docker's bridge network rather than opening it to your whole LAN:
+
+```bash
+sudo mkdir -p /etc/systemd/system/ollama.service.d
+printf '[Service]\nEnvironment="OLLAMA_HOST=0.0.0.0:11434"\n' | sudo tee /etc/systemd/system/ollama.service.d/override.conf
+sudo systemctl daemon-reload && sudo systemctl restart ollama
+
+# find the Compose project's bridge subnet and allow only that:
+docker network inspect enterprise-ai-workflow-platform_default --format '{{json .IPAM.Config}}'
+sudo ufw allow from <subnet-from-above> to any port 11434
+```
+
+Then set `LLM_MODE=ollama` (and optionally `OLLAMA_MODEL=<other model>`) in `.env` or
+as a Compose environment override, and re-run `docker compose up --build`.
 
 ## Phase plan
 

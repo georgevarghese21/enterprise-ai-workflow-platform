@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     llm_mode: str = "mock"
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
+    # Ollama runs locally and is free (no API key). The default host works
+    # for the backend running outside Docker; docker-compose.yml overrides
+    # it to http://host.docker.internal:11434 so the container can reach an
+    # Ollama server running on the host.
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3.2"
     embedding_provider: str = "mock"
     policies_dir: str = _DEFAULT_POLICIES_DIR
 
