@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.api import employees, health, requests, resources
+from app.api import employees, health, policy, requests, resources
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 
@@ -21,3 +21,4 @@ app.include_router(health.router)
 app.include_router(employees.router)
 app.include_router(resources.router)
 app.include_router(requests.router)
+app.include_router(policy.router)

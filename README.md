@@ -8,23 +8,34 @@ human-in-the-loop approval, audit logging, and an evaluation harness — not a c
 > **NovaTech, its employees, policies, and internal APIs are entirely fictional.**
 > They exist only to give this project a realistic enterprise setting.
 
-This README grows with each implementation phase. It currently reflects **Phase 1**.
+This README grows with each implementation phase. It currently reflects **Phase 2**.
 
-## Status: Phase 1 — Foundations
+## Status: Phase 2 — RAG ingestion & retrieval
 
 What exists so far:
 
-- FastAPI backend with a health check, employees, resources, and requests endpoints.
-- PostgreSQL (via the `pgvector/pgvector` image, so pgvector is ready for Phase 2) with
-  SQLAlchemy models and an Alembic migration for `employees`, `resources`, `requests`.
+- FastAPI backend with a health check, employees, resources, requests, and policy
+  search endpoints.
+- PostgreSQL with the `pgvector` extension, SQLAlchemy models, and Alembic migrations
+  for `employees`, `resources`, `requests`, and `policy_chunks`.
 - Seed data: ~30 fictional NovaTech employees across 7 departments with a manager
   hierarchy, and 9 mock enterprise resources (databases, repos, cloud accounts, tools).
-- Docker Compose setup running Postgres + the backend together.
-- pytest suite covering the API endpoints built so far.
+- 5 fictional NovaTech policy documents (`data/policies/`) covering data access,
+  IT equipment/software, travel & expenses, remote work & time off, and security
+  incidents — split into ~35 chunks, embedded, and stored in `policy_chunks`.
+- A deterministic, dependency-free "mock" embedding provider (feature-hashing
+  bag-of-words) so ingestion, retrieval, and tests never need an external API call;
+  a real provider can be swapped in behind the same interface in a later phase.
+- `POST /api/policy/search` — cosine-similarity search over policy chunks.
+  `GET /api/policy/documents` — lists ingested documents and their chunk counts.
+- Docker Compose setup running Postgres + the backend together, applying migrations,
+  seeding, and ingesting policy documents on startup.
+- pytest suite covering the API endpoints and RAG chunking/embedding/retrieval built
+  so far.
 
-Not yet implemented (later phases): RAG ingestion/retrieval, LLM classification,
-LangGraph workflow, tool execution, human-in-the-loop approvals, audit logging, the
-React frontend, the evaluation harness, and CI/CD. See the phase plan below.
+Not yet implemented (later phases): LLM classification, LangGraph workflow, tool
+execution, human-in-the-loop approvals, audit logging, the React frontend, the
+evaluation harness, and CI/CD. See the phase plan below.
 
 ## Architecture (target — will fill in as phases land)
 
@@ -72,14 +83,14 @@ backend/
     services/      (later) business logic
     agents/        (later) LangGraph nodes
     tools/          (later) mock enterprise tools
-    rag/            (later) embeddings/retrieval
+    rag/            embeddings, chunking, ingestion, retrieval
     evaluation/     (later) evaluation harness
     workflows/      (later) LangGraph graph definition
     main.py
   alembic/         migrations
   tests/           pytest suite
 data/
-  policies/        (later) fictional NovaTech policy documents
+  policies/        fictional NovaTech policy documents (markdown, source for RAG)
   evaluation/      (later) evaluation test cases
 frontend/          (later) React + TypeScript app
 docker-compose.yml
@@ -93,8 +104,8 @@ docker compose up --build
 ```
 
 This starts Postgres, applies Alembic migrations, seeds NovaTech's fictional
-employees/resources, and starts the API at http://localhost:8000 (docs at
-http://localhost:8000/docs).
+employees/resources, ingests the policy documents under `data/policies/` for RAG,
+and starts the API at http://localhost:8000 (docs at http://localhost:8000/docs).
 
 ## Running tests
 
@@ -122,7 +133,7 @@ provider integrations.
 ## Phase plan
 
 1. ✅ Backend foundations: FastAPI, PostgreSQL, Docker Compose, SQLAlchemy, Alembic, seed data
-2. RAG ingestion + retrieval over NovaTech policy documents (pgvector)
+2. ✅ RAG ingestion + retrieval over NovaTech policy documents (pgvector)
 3. LLM provider abstraction, structured request classification, mock LLM mode
 4. Mock enterprise tools (database/repo access, IT tickets, travel, expenses)
 5. LangGraph workflow (classify → retrieve → plan → risk check → execute → respond)

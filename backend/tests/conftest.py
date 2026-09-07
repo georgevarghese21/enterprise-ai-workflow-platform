@@ -58,6 +58,8 @@ TestSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, 
 
 @pytest.fixture(scope="session", autouse=True)
 def _setup_database():
+    with engine.begin() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     yield
@@ -68,7 +70,12 @@ def _setup_database():
 def _clean_tables():
     yield
     with engine.begin() as conn:
-        conn.execute(text("TRUNCATE TABLE requests, employees, resources RESTART IDENTITY CASCADE"))
+        conn.execute(
+            text(
+                "TRUNCATE TABLE requests, employees, resources, policy_chunks "
+                "RESTART IDENTITY CASCADE"
+            )
+        )
 
 
 @pytest.fixture
