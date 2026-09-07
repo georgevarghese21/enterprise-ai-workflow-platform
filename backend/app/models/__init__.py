@@ -6,5 +6,6 @@ from app.models.employee import Employee
 from app.models.policy_chunk import PolicyChunk
 from app.models.request import Request
 from app.models.resource import Resource
+from app.models.tool_execution import ToolExecution
 
-__all__ = ["Employee", "PolicyChunk", "Resource", "Request"]
+__all__ = ["Employee", "PolicyChunk", "Resource", "Request", "ToolExecution"]

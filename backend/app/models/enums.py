@@ -48,6 +48,21 @@ class RequestIntent(enum.StrEnum):
     OTHER = "OTHER"
 
 
+class ToolExecutionStatus(enum.StrEnum):
+    """Outcome of a mock enterprise tool call (Phase 4+).
+
+    Mirrors the approval language used throughout `data/policies/`: a tool
+    call is either auto-approved outright, left pending a human approval
+    that doesn't exist yet (Phase 6 adds the actual approve/reject flow),
+    or denied by a hard policy rule (e.g. a contractor requesting standing
+    HIGH-sensitivity access).
+    """
+
+    APPROVED = "APPROVED"
+    PENDING_APPROVAL = "PENDING_APPROVAL"
+    DENIED = "DENIED"
+
+
 class WorkflowStatus(enum.StrEnum):
     """Lifecycle of a single employee request as it moves through the
     (future) LangGraph workflow. Phase 1 only ever sets RECEIVED; later

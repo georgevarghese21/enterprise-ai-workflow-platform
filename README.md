@@ -8,9 +8,9 @@ human-in-the-loop approval, audit logging, and an evaluation harness — not a c
 > **NovaTech, its employees, policies, and internal APIs are entirely fictional.**
 > They exist only to give this project a realistic enterprise setting.
 
-This README grows with each implementation phase. It currently reflects **Phase 3**.
+This README grows with each implementation phase. It currently reflects **Phase 4**.
 
-## Status: Phase 3 — LLM classification
+## Status: Phase 4 — Mock enterprise tools
 
 What exists so far:
 
@@ -43,12 +43,26 @@ What exists so far:
   of 9 intents (data access, IT equipment/software, travel, expenses, time off, remote
   work, security incident, other), stores the result, and advances the request's status
   to `CLASSIFIED`.
-- pytest suite (27 tests) covering the API endpoints, RAG chunking/embedding/retrieval,
-  and classification (including a network-free Ollama-provider test) built so far.
+- Four mock enterprise tools (`app/tools/`), each encoding the actual approval rules
+  from the Phase 2 policy documents as deterministic Python logic: `grant_data_access`
+  (sensitivity-tiered approval, contractor HIGH-sensitivity restrictions),
+  `create_it_ticket` (standard vs. non-standard equipment, pre-approved vs. new
+  software), `book_travel` (domestic/international, cost threshold), and
+  `submit_expense` (auto-approve / manager / manager+Finance tiers). Each tool is a
+  pure function (no DB access) returning an `APPROVED` / `PENDING_APPROVAL` / `DENIED`
+  outcome, so the business rules are unit-testable without a database.
+- Every tool call is logged to a shared `tool_executions` table (input, result,
+  outcome, and an optional link to the `Request` it was made for) via
+  `POST /api/tools/{data-access,it-ticket,travel-booking,expense-reimbursement}` and
+  listed via `GET /api/tools/executions` — this is what the Phase 5 LangGraph workflow
+  will call into, and what Phase 7's audit log will build on.
+- pytest suite (54 tests) covering the API endpoints, RAG chunking/embedding/retrieval,
+  classification (including a network-free Ollama-provider test), and the mock tools'
+  business rules and API wiring.
 
-Not yet implemented (later phases): LangGraph workflow, tool execution,
-human-in-the-loop approvals, audit logging, the React frontend, the evaluation
-harness, and CI/CD. See the phase plan below.
+Not yet implemented (later phases): LangGraph workflow, human-in-the-loop approvals,
+audit logging, the React frontend, the evaluation harness, and CI/CD. See the phase
+plan below.
 
 ## Architecture (target — will fill in as phases land)
 
@@ -95,7 +109,7 @@ backend/
     schemas/      Pydantic request/response models
     services/      (later) business logic
     agents/        (later) LangGraph nodes
-    tools/          (later) mock enterprise tools
+    tools/          mock enterprise tools (data access, IT tickets, travel, expenses)
     rag/            embeddings, chunking, ingestion, retrieval
     evaluation/     (later) evaluation harness
     workflows/      (later) LangGraph graph definition
@@ -178,7 +192,7 @@ as a Compose environment override, and re-run `docker compose up --build`.
 1. ✅ Backend foundations: FastAPI, PostgreSQL, Docker Compose, SQLAlchemy, Alembic, seed data
 2. ✅ RAG ingestion + retrieval over NovaTech policy documents (pgvector)
 3. ✅ LLM provider abstraction, structured request classification, mock LLM mode
-4. Mock enterprise tools (database/repo access, IT tickets, travel, expenses)
+4. ✅ Mock enterprise tools (database/repo access, IT tickets, travel, expenses)
 5. LangGraph workflow (classify → retrieve → plan → risk check → execute → respond)
 6. Human-in-the-loop approvals with workflow pause/resume
 7. Audit logging and workflow timeline

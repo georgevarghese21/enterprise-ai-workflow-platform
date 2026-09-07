@@ -80,8 +80,8 @@ def _clean_tables():
     with engine.begin() as conn:
         conn.execute(
             text(
-                "TRUNCATE TABLE requests, employees, resources, policy_chunks "
-                "RESTART IDENTITY CASCADE"
+                "TRUNCATE TABLE requests, employees, resources, policy_chunks, "
+                "tool_executions RESTART IDENTITY CASCADE"
             )
         )
 
