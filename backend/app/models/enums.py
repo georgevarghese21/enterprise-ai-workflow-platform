@@ -29,6 +29,25 @@ class Sensitivity(enum.StrEnum):
     HIGH = "HIGH"
 
 
+class RequestIntent(enum.StrEnum):
+    """The category an employee request is classified into (Phase 3+).
+
+    Chosen to line up 1:1 with both the fictional policy documents under
+    `data/policies/` (so RAG retrieval has an obvious document to target)
+    and the mock enterprise tools planned for Phase 4.
+    """
+
+    DATA_ACCESS = "DATA_ACCESS"
+    IT_EQUIPMENT = "IT_EQUIPMENT"
+    IT_SOFTWARE = "IT_SOFTWARE"
+    TRAVEL_BOOKING = "TRAVEL_BOOKING"
+    EXPENSE_REIMBURSEMENT = "EXPENSE_REIMBURSEMENT"
+    TIME_OFF = "TIME_OFF"
+    REMOTE_WORK = "REMOTE_WORK"
+    SECURITY_INCIDENT = "SECURITY_INCIDENT"
+    OTHER = "OTHER"
+
+
 class WorkflowStatus(enum.StrEnum):
     """Lifecycle of a single employee request as it moves through the
     (future) LangGraph workflow. Phase 1 only ever sets RECEIVED; later

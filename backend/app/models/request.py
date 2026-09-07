@@ -1,13 +1,13 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Text, func
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.models.employee import Employee
-from app.models.enums import WorkflowStatus
+from app.models.enums import RequestIntent, WorkflowStatus
 
 
 class Request(Base):
@@ -33,6 +33,11 @@ class Request(Base):
         nullable=False,
         default=WorkflowStatus.RECEIVED,
     )
+    intent: Mapped[RequestIntent | None] = mapped_column(
+        Enum(RequestIntent, name="request_intent_enum"), nullable=True
+    )
+    classification_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    classification_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
     final_response: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

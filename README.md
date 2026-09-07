@@ -8,9 +8,9 @@ human-in-the-loop approval, audit logging, and an evaluation harness — not a c
 > **NovaTech, its employees, policies, and internal APIs are entirely fictional.**
 > They exist only to give this project a realistic enterprise setting.
 
-This README grows with each implementation phase. It currently reflects **Phase 2**.
+This README grows with each implementation phase. It currently reflects **Phase 3**.
 
-## Status: Phase 2 — RAG ingestion & retrieval
+## Status: Phase 3 — LLM classification
 
 What exists so far:
 
@@ -30,12 +30,20 @@ What exists so far:
   `GET /api/policy/documents` — lists ingested documents and their chunk counts.
 - Docker Compose setup running Postgres + the backend together, applying migrations,
   seeding, and ingesting policy documents on startup.
-- pytest suite covering the API endpoints and RAG chunking/embedding/retrieval built
-  so far.
+- An LLM provider abstraction (`app/services/llm_provider.py`) mirroring the embedding
+  provider pattern: the default `mock` mode is a deterministic keyword-rule classifier
+  with no external calls, and `LLM_MODE=anthropic` (with `ANTHROPIC_API_KEY` set)
+  switches to a real Claude call using structured outputs (`RequestClassification`).
+- `POST /api/requests/{request_id}/classify` — classifies a submitted request into one
+  of 9 intents (data access, IT equipment/software, travel, expenses, time off, remote
+  work, security incident, other), stores the result, and advances the request's status
+  to `CLASSIFIED`.
+- pytest suite (24 tests) covering the API endpoints, RAG chunking/embedding/retrieval,
+  and classification built so far.
 
-Not yet implemented (later phases): LLM classification, LangGraph workflow, tool
-execution, human-in-the-loop approvals, audit logging, the React frontend, the
-evaluation harness, and CI/CD. See the phase plan below.
+Not yet implemented (later phases): LangGraph workflow, tool execution,
+human-in-the-loop approvals, audit logging, the React frontend, the evaluation
+harness, and CI/CD. See the phase plan below.
 
 ## Architecture (target — will fill in as phases land)
 
@@ -118,10 +126,12 @@ pip install -e ".[dev]"
 DATABASE_URL=postgresql+psycopg://novatech:novatech@localhost:5432/novatech_test pytest
 ```
 
-or inside Docker:
+or inside Docker (the `DATABASE_URL` override is required — without it, `pytest` inherits
+Compose's `novatech` dev-database URL, and the test suite's teardown will wipe the dev
+database's tables):
 
 ```bash
-docker compose run --rm backend pytest
+docker compose run --rm -e DATABASE_URL=postgresql+psycopg://novatech:novatech@postgres:5432/novatech_test backend pytest
 ```
 
 ## Environment variables
@@ -134,7 +144,7 @@ provider integrations.
 
 1. ✅ Backend foundations: FastAPI, PostgreSQL, Docker Compose, SQLAlchemy, Alembic, seed data
 2. ✅ RAG ingestion + retrieval over NovaTech policy documents (pgvector)
-3. LLM provider abstraction, structured request classification, mock LLM mode
+3. ✅ LLM provider abstraction, structured request classification, mock LLM mode
 4. Mock enterprise tools (database/repo access, IT tickets, travel, expenses)
 5. LangGraph workflow (classify → retrieve → plan → risk check → execute → respond)
 6. Human-in-the-loop approvals with workflow pause/resume

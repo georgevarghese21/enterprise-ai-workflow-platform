@@ -20,6 +20,14 @@ from app.models.resource import Resource
 
 settings = get_settings()
 
+if "test" not in make_url(settings.database_url).database:
+    raise RuntimeError(
+        f"Refusing to run tests against DATABASE_URL={settings.database_url!r}: its "
+        "database name doesn't contain 'test'. This test suite drops and recreates "
+        "every table, so pointing it at a non-test database (e.g. the dev database) "
+        "would destroy real data. Point DATABASE_URL at a *_test database instead."
+    )
+
 
 def _ensure_database_exists(database_url: str) -> None:
     """Create the target database if it doesn't exist yet.

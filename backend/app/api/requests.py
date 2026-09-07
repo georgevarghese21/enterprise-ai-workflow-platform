@@ -6,8 +6,10 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.employee import Employee
+from app.models.enums import WorkflowStatus
 from app.models.request import Request
 from app.schemas.request import RequestCreate, RequestRead
+from app.services.llm_provider import get_llm_provider
 
 router = APIRouter(prefix="/api/requests", tags=["requests"])
 
@@ -35,4 +37,22 @@ def get_request(request_id: UUID, db: Session = Depends(get_db)) -> Request:
     request = db.get(Request, request_id)
     if request is None:
         raise HTTPException(status_code=404, detail="Request not found")
+    return request
+
+
+@router.post("/{request_id}/classify", response_model=RequestRead)
+def classify_request(request_id: UUID, db: Session = Depends(get_db)) -> Request:
+    request = db.get(Request, request_id)
+    if request is None:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    provider = get_llm_provider()
+    result = provider.classify(request.raw_query)
+
+    request.intent = result.intent
+    request.classification_confidence = result.confidence
+    request.classification_reasoning = result.reasoning
+    request.status = WorkflowStatus.CLASSIFIED
+    db.commit()
+    db.refresh(request)
     return request

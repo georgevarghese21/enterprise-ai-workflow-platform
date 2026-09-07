@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.enums import WorkflowStatus
+from app.models.enums import RequestIntent, WorkflowStatus
 
 
 class RequestCreate(BaseModel):
@@ -18,6 +18,9 @@ class RequestRead(BaseModel):
     employee_id: int
     raw_query: str
     status: WorkflowStatus
+    intent: RequestIntent | None
+    classification_confidence: float | None
+    classification_reasoning: str | None
     final_response: str | None
     created_at: datetime
     updated_at: datetime
