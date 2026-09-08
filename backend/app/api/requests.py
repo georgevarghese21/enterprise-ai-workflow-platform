@@ -10,6 +10,7 @@ from app.models.enums import WorkflowStatus
 from app.models.request import Request
 from app.schemas.request import RequestCreate, RequestRead
 from app.services.llm_provider import get_llm_provider
+from app.workflows.graph import run_request_workflow
 
 router = APIRouter(prefix="/api/requests", tags=["requests"])
 
@@ -53,6 +54,36 @@ def classify_request(request_id: UUID, db: Session = Depends(get_db)) -> Request
     request.classification_confidence = result.confidence
     request.classification_reasoning = result.reasoning
     request.status = WorkflowStatus.CLASSIFIED
+    db.commit()
+    db.refresh(request)
+    return request
+
+
+@router.post("/{request_id}/run", response_model=RequestRead)
+def run_request_workflow_endpoint(request_id: UUID, db: Session = Depends(get_db)) -> Request:
+    """Run the full LangGraph workflow (Phase 5) for a request end to end.
+
+    Unlike `/classify`, which only runs the classification step, this runs
+    classify -> retrieve -> plan -> risk check -> execute -> respond in one
+    call and persists every artifact the graph produced along the way.
+    """
+    request = db.get(Request, request_id)
+    if request is None:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    final_state = run_request_workflow(db, request)
+
+    request.intent = final_state.get("intent")
+    request.classification_confidence = final_state.get("confidence")
+    request.classification_reasoning = final_state.get("reasoning")
+    request.retrieved_policy = final_state.get("retrieved_chunks") or None
+    request.plan_tool_name = final_state.get("plan_tool_name")
+    request.plan_arguments = final_state.get("plan_arguments") or None
+    request.risk_level = final_state.get("risk_level")
+    request.risk_flags = final_state.get("risk_flags") or None
+    request.tool_execution_id = final_state.get("tool_execution_id")
+    request.status = final_state["status"]
+    request.final_response = final_state.get("final_response")
     db.commit()
     db.refresh(request)
     return request

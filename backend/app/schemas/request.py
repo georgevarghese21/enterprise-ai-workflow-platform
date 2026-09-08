@@ -1,9 +1,10 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.enums import RequestIntent, WorkflowStatus
+from app.models.enums import RequestIntent, RiskLevel, WorkflowStatus
 
 
 class RequestCreate(BaseModel):
@@ -21,6 +22,12 @@ class RequestRead(BaseModel):
     intent: RequestIntent | None
     classification_confidence: float | None
     classification_reasoning: str | None
+    retrieved_policy: list[dict[str, Any]] | None
+    plan_tool_name: str | None
+    plan_arguments: dict[str, Any] | None
+    risk_level: RiskLevel | None
+    risk_flags: list[str] | None
+    tool_execution_id: uuid.UUID | None
     final_response: str | None
     created_at: datetime
     updated_at: datetime

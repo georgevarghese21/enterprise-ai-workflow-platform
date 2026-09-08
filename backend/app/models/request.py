@@ -1,22 +1,24 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.models.employee import Employee
-from app.models.enums import RequestIntent, WorkflowStatus
+from app.models.enums import RequestIntent, RiskLevel, WorkflowStatus
 
 
 class Request(Base):
     """A single employee request submitted to the AI assistant.
 
-    This is the row that the (future) LangGraph workflow attaches its
-    classification, retrieved evidence, tool results, and final response to.
-    Phase 1 only supports creating and reading requests; the `status` field
-    stays at RECEIVED until the agentic workflow (Phase 5+) advances it.
+    This is the row that the LangGraph workflow (Phase 5+) attaches its
+    classification, retrieved evidence, tool plan, risk assessment, and
+    final response to. Phase 1 only supported creating and reading
+    requests; `POST /api/requests/{id}/run` (Phase 5) is what actually
+    advances `status` and fills in the rest of these columns end to end.
     """
 
     __tablename__ = "requests"
@@ -38,6 +40,23 @@ class Request(Base):
     )
     classification_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     classification_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    retrieved_policy: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
+    plan_tool_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    plan_arguments: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    risk_level: Mapped[RiskLevel | None] = mapped_column(
+        Enum(RiskLevel, name="risk_level_enum"), nullable=True
+    )
+    risk_flags: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    tool_execution_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "tool_executions.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_requests_tool_execution_id",
+        ),
+        nullable=True,
+    )
     final_response: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

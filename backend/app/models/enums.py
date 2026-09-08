@@ -63,6 +63,21 @@ class ToolExecutionStatus(enum.StrEnum):
     DENIED = "DENIED"
 
 
+class RiskLevel(enum.StrEnum):
+    """Outcome of the (Phase 5+) deterministic risk-check step.
+
+    Independent of any individual tool's own approval tiers: this catches
+    cross-cutting concerns no single tool would know to check, such as an
+    inactive employee or a low-confidence classification, and can force a
+    request to human review (`escalate`) even when the tool itself would
+    have auto-approved it.
+    """
+
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+
+
 class WorkflowStatus(enum.StrEnum):
     """Lifecycle of a single employee request as it moves through the
     (future) LangGraph workflow. Phase 1 only ever sets RECEIVED; later

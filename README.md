@@ -8,9 +8,9 @@ human-in-the-loop approval, audit logging, and an evaluation harness — not a c
 > **NovaTech, its employees, policies, and internal APIs are entirely fictional.**
 > They exist only to give this project a realistic enterprise setting.
 
-This README grows with each implementation phase. It currently reflects **Phase 4**.
+This README grows with each implementation phase. It currently reflects **Phase 5**.
 
-## Status: Phase 4 — Mock enterprise tools
+## Status: Phase 5 — LangGraph workflow
 
 What exists so far:
 
@@ -56,13 +56,36 @@ What exists so far:
   `POST /api/tools/{data-access,it-ticket,travel-booking,expense-reimbursement}` and
   listed via `GET /api/tools/executions` — this is what the Phase 5 LangGraph workflow
   will call into, and what Phase 7's audit log will build on.
-- pytest suite (54 tests) covering the API endpoints, RAG chunking/embedding/retrieval,
-  classification (including a network-free Ollama-provider test), and the mock tools'
-  business rules and API wiring.
+- A LangGraph workflow (`app/workflows/graph.py`, nodes in `app/agents/nodes.py`) that
+  wires everything above into one agentic pipeline:
+  `classify -> retrieve_policy -> plan -> risk_check -> execute -> verify -> respond`.
+  `POST /api/requests/{request_id}/run` runs a request through it end to end and
+  persists every artifact (classification, retrieved policy chunks, planned tool call,
+  risk assessment, resulting `tool_executions` row, and a final response) onto the
+  `Request` row in one commit.
+  - Intents with no matching mock tool (time off, remote work, security incidents, other)
+    skip straight from policy retrieval to a policy-only response - there's no tool to plan
+    or execute for those yet.
+  - `plan` extends the LLM provider abstraction with a `plan()` method (mock: regex/keyword
+    heuristics against the request text and the DB's known resource names; real providers:
+    structured-output extraction) that turns free text into arguments for the matching tool.
+  - `risk_check` is a deterministic rules layer independent of any single tool's own
+    approval tiers - it force-escalates a request to human review (`AWAITING_APPROVAL`)
+    for cross-cutting concerns no tool would catch on its own, such as an inactive
+    employee, a low-confidence classification, or a tool plan missing a required argument
+    (e.g. no resource name could be matched in the request text).
+  - `execute` calls the same Phase 4 tool functions and logs to `tool_executions` via a
+    shared `persist_tool_execution` helper, so a workflow-triggered tool call is
+    indistinguishable in the audit trail from one triggered directly via `/api/tools/*`.
+- pytest suite (63 tests) covering the API endpoints, RAG chunking/embedding/retrieval,
+  classification (including a network-free Ollama-provider test), the mock tools'
+  business rules and API wiring, and the LangGraph workflow's branches (auto-approval,
+  pending-approval, denial, policy-only response, and risk-based escalation).
 
-Not yet implemented (later phases): LangGraph workflow, human-in-the-loop approvals,
-audit logging, the React frontend, the evaluation harness, and CI/CD. See the phase
-plan below.
+Not yet implemented (later phases): pause/resume for human-in-the-loop approval (the
+workflow currently reaches `AWAITING_APPROVAL` as a terminal state but nothing can yet
+resume it), audit logging, the React frontend, the evaluation harness, and CI/CD. See
+the phase plan below.
 
 ## Architecture (target — will fill in as phases land)
 
@@ -111,8 +134,9 @@ backend/
     agents/        (later) LangGraph nodes
     tools/          mock enterprise tools (data access, IT tickets, travel, expenses)
     rag/            embeddings, chunking, ingestion, retrieval
+    agents/         LangGraph node implementations and shared workflow state
     evaluation/     (later) evaluation harness
-    workflows/      (later) LangGraph graph definition
+    workflows/      LangGraph graph definition (classify -> ... -> respond)
     main.py
   alembic/         migrations
   tests/           pytest suite
@@ -193,7 +217,7 @@ as a Compose environment override, and re-run `docker compose up --build`.
 2. ✅ RAG ingestion + retrieval over NovaTech policy documents (pgvector)
 3. ✅ LLM provider abstraction, structured request classification, mock LLM mode
 4. ✅ Mock enterprise tools (database/repo access, IT tickets, travel, expenses)
-5. LangGraph workflow (classify → retrieve → plan → risk check → execute → respond)
+5. ✅ LangGraph workflow (classify → retrieve → plan → risk check → execute → respond)
 6. Human-in-the-loop approvals with workflow pause/resume
 7. Audit logging and workflow timeline
 8. React + TypeScript frontend

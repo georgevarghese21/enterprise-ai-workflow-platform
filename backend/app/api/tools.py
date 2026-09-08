@@ -16,10 +16,10 @@ from app.schemas.tool import (
     ToolExecutionRead,
     TravelBookingToolRequest,
 )
+from app.services.tool_execution import persist_tool_execution
 from app.tools.data_access import grant_data_access
 from app.tools.expense import submit_expense
 from app.tools.it_ticket import create_it_ticket
-from app.tools.result import ToolResult
 from app.tools.travel import book_travel
 
 router = APIRouter(prefix="/api/tools", tags=["tools"])
@@ -37,29 +37,6 @@ def _check_request_exists(db: Session, request_id: uuid.UUID | None) -> None:
         raise HTTPException(status_code=404, detail="Request not found")
 
 
-def _persist(
-    db: Session,
-    tool_name: str,
-    employee_id: int,
-    request_id: uuid.UUID | None,
-    input_payload: dict,
-    result: ToolResult,
-) -> ToolExecution:
-    execution = ToolExecution(
-        request_id=request_id,
-        employee_id=employee_id,
-        tool_name=tool_name,
-        status=result.status,
-        input_payload=input_payload,
-        result_payload=result.details,
-        message=result.message,
-    )
-    db.add(execution)
-    db.commit()
-    db.refresh(execution)
-    return execution
-
-
 @router.post("/data-access", response_model=ToolExecutionRead, status_code=201)
 def data_access_tool(
     payload: DataAccessToolRequest, db: Session = Depends(get_db)
@@ -71,7 +48,7 @@ def data_access_tool(
         raise HTTPException(status_code=404, detail="Resource not found")
 
     result = grant_data_access(employee, resource, payload.duration_days)
-    return _persist(
+    return persist_tool_execution(
         db,
         "grant_data_access",
         employee.id,
@@ -89,7 +66,7 @@ def it_ticket_tool(payload: ITTicketToolRequest, db: Session = Depends(get_db)) 
     result = create_it_ticket(
         employee, payload.category, payload.description, payload.equipment_cost_usd
     )
-    return _persist(
+    return persist_tool_execution(
         db,
         "create_it_ticket",
         employee.id,
@@ -109,7 +86,7 @@ def travel_booking_tool(
     result = book_travel(
         employee, payload.destination, payload.is_international, payload.total_cost_usd
     )
-    return _persist(
+    return persist_tool_execution(
         db,
         "book_travel",
         employee.id,
@@ -127,7 +104,7 @@ def expense_reimbursement_tool(
     _check_request_exists(db, payload.request_id)
 
     result = submit_expense(employee, payload.amount_usd, payload.description)
-    return _persist(
+    return persist_tool_execution(
         db,
         "submit_expense",
         employee.id,
