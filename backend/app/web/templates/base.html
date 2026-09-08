@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}NovaTech AI Assistant{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://unpkg.com/htmx.org@1.9.12" integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2" crossorigin="anonymous"></script>
+</head>
+<body>
+  <header class="site">
+    <a class="brand" href="/">NovaTech AI Assistant</a>
+    <nav>
+      <a href="/">Dashboard</a>
+      <a href="/requests">Requests</a>
+      <a href="/requests/new">New Request</a>
+      <a href="/approvals">Approvals</a>
+      <a href="/employees">Employees</a>
+      <a href="/resources">Resources</a>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

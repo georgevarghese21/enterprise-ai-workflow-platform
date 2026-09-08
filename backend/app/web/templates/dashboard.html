@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — NovaTech AI Assistant{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+<p class="subtitle">Internal AI assistant for NovaTech employee requests.</p>
+
+<div class="stat-row">
+  <div class="stat">
+    <span class="n">{{ total_count }}</span>
+    <span class="label">Total requests</span>
+  </div>
+  <div class="stat">
+    <span class="n">{{ pending_count }}</span>
+    <span class="label">Awaiting approval</span>
+  </div>
+</div>
+
+<div class="actions">
+  <a class="button" href="/requests/new">Submit a new request</a>
+  <a class="button secondary" href="/approvals">Review approval queue</a>
+</div>
+
+<h2>Recent requests</h2>
+{% if recent_requests %}
+<table>
+  <thead>
+    <tr><th>Employee</th><th>Request</th><th>Intent</th><th>Status</th><th>Submitted</th></tr>
+  </thead>
+  <tbody>
+    {% for r in recent_requests %}
+    <tr>
+      <td>{{ r.employee.name }}</td>
+      <td><a href="/requests/{{ r.id }}">{{ r.raw_query|truncate(60) }}</a></td>
+      <td class="muted">{{ r.intent.value if r.intent else "—" }}</td>
+      <td><span class="badge badge-{{ r.status|badge }}">{{ r.status.value }}</span></td>
+      <td class="muted small">{{ r.created_at|dt }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No requests yet. <a href="/requests/new">Submit the first one.</a></p>
+{% endif %}
+{% endblock %}

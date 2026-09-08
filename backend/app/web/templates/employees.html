@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Employees — NovaTech AI Assistant{% endblock %}
+{% block content %}
+<h1>Employees</h1>
+<p class="subtitle">Reference list of NovaTech's fictional employees (used as the "Employee" dropdown when submitting a request).</p>
+<table>
+  <thead>
+    <tr><th>ID</th><th>Name</th><th>Role</th><th>Department</th><th>Type</th><th>Active</th></tr>
+  </thead>
+  <tbody>
+    {% for e in employees %}
+    <tr>
+      <td>{{ e.id }}</td>
+      <td>{{ e.name }}</td>
+      <td>{{ e.role }}</td>
+      <td class="muted">{{ e.department.value }}</td>
+      <td class="muted">{{ e.employment_type.value }}</td>
+      <td>{% if e.active %}<span class="badge badge-ok">active</span>{% else %}<span class="badge badge-danger">inactive</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

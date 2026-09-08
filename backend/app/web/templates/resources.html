@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Resources — NovaTech AI Assistant{% endblock %}
+{% block content %}
+<h1>Resources</h1>
+<p class="subtitle">Reference list of NovaTech's mock enterprise resources. Mention one by exact name in a data-access request for the planner to match it.</p>
+<table>
+  <thead>
+    <tr><th>Name</th><th>Type</th><th>Sensitivity</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    {% for r in resources %}
+    <tr>
+      <td class="mono">{{ r.name }}</td>
+      <td class="muted">{{ r.resource_type.value }}</td>
+      <td><span class="badge badge-{{ r.sensitivity|severity_badge }}">{{ r.sensitivity.value }}</span></td>
+      <td class="muted small">{{ r.description or "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

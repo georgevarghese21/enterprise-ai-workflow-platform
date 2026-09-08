@@ -1,0 +1,21 @@
+<tr id="approval-row-{{ r.id }}">
+  <td><a href="/requests/{{ r.id }}">{{ r.raw_query|truncate(50) }}</a></td>
+  <td>{{ r.employee.name }}</td>
+  <td>{% if r.risk_level %}<span class="badge badge-{{ r.risk_level|severity_badge }}">{{ r.risk_level.value }}</span>{% endif %}</td>
+  <td class="small muted">{{ r.risk_flags|join(", ") if r.risk_flags else "—" }}</td>
+  <td class="muted small">{{ r.updated_at|dt }}</td>
+  <td>
+    {% if error %}
+    <div class="small" style="color:var(--danger); margin-bottom:0.3rem;">{{ error }}</div>
+    {% endif %}
+    <form hx-post="/requests/{{ r.id }}/approve?view=queue" hx-target="closest tr" hx-swap="outerHTML" class="inline">
+      <select name="approver_employee_id" required>
+        {% for a in approvers_by_request[r.id] %}
+        <option value="{{ a.id }}">{{ a.name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">Approve</button>
+      <button type="submit" formaction="/requests/{{ r.id }}/reject?view=queue" class="danger">Reject</button>
+    </form>
+  </td>
+</tr>

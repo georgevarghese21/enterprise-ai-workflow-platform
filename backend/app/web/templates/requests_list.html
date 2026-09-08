@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Requests — NovaTech AI Assistant{% endblock %}
+{% block content %}
+<h1>All requests</h1>
+
+<form method="get" action="/requests" class="inline" style="margin-bottom:1rem;">
+  <label for="status" style="margin:0;">Status</label>
+  <select name="status" id="status" onchange="this.form.submit()">
+    <option value="" {% if not status_filter %}selected{% endif %}>All</option>
+    {% for s in statuses %}
+    <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+</form>
+
+{% if requests_list %}
+<table>
+  <thead>
+    <tr><th>Employee</th><th>Request</th><th>Intent</th><th>Status</th><th>Submitted</th></tr>
+  </thead>
+  <tbody>
+    {% for r in requests_list %}
+    <tr>
+      <td>{{ r.employee.name }}</td>
+      <td><a href="/requests/{{ r.id }}">{{ r.raw_query|truncate(70) }}</a></td>
+      <td class="muted">{{ r.intent.value if r.intent else "—" }}</td>
+      <td><span class="badge badge-{{ r.status|badge }}">{{ r.status.value }}</span></td>
+      <td class="muted small">{{ r.created_at|dt }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No requests match this filter.</p>
+{% endif %}
+{% endblock %}

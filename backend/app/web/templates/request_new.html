@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}New Request — NovaTech AI Assistant{% endblock %}
+{% block content %}
+<h1>Submit a new request</h1>
+<p class="subtitle">Pretend to be a NovaTech employee asking the AI assistant for something.</p>
+
+<div class="card">
+  <form method="post" action="/requests">
+    <label for="employee_id">Employee</label>
+    <select name="employee_id" id="employee_id" required>
+      {% for e in employees %}
+      <option value="{{ e.id }}">{{ e.name }} — {{ e.role }} ({{ e.department.value }})</option>
+      {% endfor %}
+    </select>
+
+    <label for="raw_query">Request</label>
+    <textarea name="raw_query" id="raw_query" required maxlength="4000"
+      placeholder="e.g. I need access to the analytics-db database for a new dashboard"></textarea>
+
+    <div class="actions">
+      <input type="submit" value="Submit request">
+    </div>
+  </form>
+</div>
+
+<p class="small muted">
+  Tip: for a data-access request to actually run, mention a resource by its exact name -
+  see the <a href="/resources">resources reference</a>.
+</p>
+{% endblock %}

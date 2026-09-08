@@ -1,0 +1,138 @@
+<div id="request-content">
+  {% if error %}
+  <div class="flash" style="background:var(--danger-bg);color:var(--danger)">{{ error }}</div>
+  {% endif %}
+  <div class="card">
+    <h2 style="margin-top:0">Request</h2>
+    <dl class="kv">
+      <dt>Employee</dt><dd>{{ req.employee.name }} ({{ req.employee.role }})</dd>
+      <dt>Submitted</dt><dd>{{ req.created_at|dt }}</dd>
+      <dt>Status</dt><dd><span class="badge badge-{{ req.status|badge }}">{{ req.status.value }}</span></dd>
+    </dl>
+    <h3>Raw request</h3>
+    <pre class="chunk">{{ req.raw_query }}</pre>
+
+    {% if req.status.value == "RECEIVED" %}
+    <div class="actions">
+      <form hx-post="/requests/{{ req.id }}/run" hx-target="#request-content" hx-swap="outerHTML">
+        <button type="submit">Run workflow</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if req.intent %}
+  <div class="card">
+    <h3>Classification</h3>
+    <dl class="kv">
+      <dt>Intent</dt><dd>{{ req.intent.value }}</dd>
+      <dt>Confidence</dt><dd>{{ "%.0f"|format(req.classification_confidence * 100) }}%</dd>
+      <dt>Reasoning</dt><dd>{{ req.classification_reasoning }}</dd>
+    </dl>
+  </div>
+  {% endif %}
+
+  {% if req.retrieved_policy %}
+  <div class="card">
+    <h3>Retrieved policy</h3>
+    {% for chunk in req.retrieved_policy %}
+    <p class="small"><strong>{{ chunk.document }}</strong>{% if chunk.title %} — {{ chunk.title }}{% endif %}
+      <span class="muted">(score {{ "%.2f"|format(chunk.score) }})</span></p>
+    <pre class="chunk">{{ chunk.content }}</pre>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if req.plan_tool_name %}
+  <div class="card">
+    <h3>Tool plan</h3>
+    <dl class="kv">
+      <dt>Tool</dt><dd class="mono">{{ req.plan_tool_name }}</dd>
+      <dt>Arguments</dt>
+      <dd class="mono">
+        {% for k, v in req.plan_arguments.items() %}{{ k }}: {{ v }}{% if not loop.last %}, {% endif %}{% endfor %}
+      </dd>
+    </dl>
+  </div>
+  {% endif %}
+
+  {% if req.risk_level %}
+  <div class="card">
+    <h3>Risk assessment</h3>
+    <dl class="kv">
+      <dt>Risk level</dt><dd><span class="badge badge-{{ req.risk_level|severity_badge }}">{{ req.risk_level.value }}</span></dd>
+      <dt>Flags</dt><dd>{% if req.risk_flags %}{{ req.risk_flags|join(", ") }}{% else %}none{% endif %}</dd>
+    </dl>
+  </div>
+  {% endif %}
+
+  {% if tool_execution %}
+  <div class="card">
+    <h3>Tool execution</h3>
+    <dl class="kv">
+      <dt>Tool</dt><dd class="mono">{{ tool_execution.tool_name }}</dd>
+      <dt>Outcome</dt><dd><span class="badge badge-{{ tool_execution.status|badge }}">{{ tool_execution.status.value }}</span></dd>
+      <dt>Message</dt><dd>{{ tool_execution.message }}</dd>
+    </dl>
+  </div>
+  {% endif %}
+
+  {% if req.status.value == "AWAITING_APPROVAL" %}
+  <div class="card">
+    <h3>Approval needed</h3>
+    <form hx-post="/requests/{{ req.id }}/approve" hx-target="#request-content" hx-swap="outerHTML">
+      <label for="approver_employee_id">Approving as</label>
+      <select name="approver_employee_id" id="approver_employee_id" required>
+        {% for a in approvers %}
+        <option value="{{ a.id }}">{{ a.name }} — {{ a.role }}</option>
+        {% endfor %}
+      </select>
+      <label for="notes">Notes (optional)</label>
+      <textarea name="notes" id="notes" maxlength="2000"></textarea>
+      <div class="actions">
+        <button type="submit">Approve</button>
+        <button type="submit" formaction="/requests/{{ req.id }}/reject" class="danger">Reject</button>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if req.approver_employee_id %}
+  <div class="card">
+    <h3>Approval decision</h3>
+    <dl class="kv">
+      <dt>Decided by</dt>
+      <dd>{{ approver_employee.name if approver_employee else "employee #" ~ req.approver_employee_id }}</dd>
+      <dt>Notes</dt><dd>{{ req.approval_notes or "—" }}</dd>
+      <dt>Decided at</dt><dd>{{ req.approved_at|dt }}</dd>
+    </dl>
+  </div>
+  {% endif %}
+
+  {% if req.final_response %}
+  <div class="card">
+    <h3>Final response</h3>
+    <p>{{ req.final_response }}</p>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <h3>Timeline</h3>
+    {% if timeline %}
+    <table>
+      <thead><tr><th>When</th><th>Event</th><th>Actor</th></tr></thead>
+      <tbody>
+        {% for event in timeline %}
+        <tr>
+          <td class="muted small">{{ event.created_at|dt }}</td>
+          <td class="mono small">{{ event.event_type }}</td>
+          <td class="muted small">{{ event.actor }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty">No events yet.</p>
+    {% endif %}
+  </div>
+</div>

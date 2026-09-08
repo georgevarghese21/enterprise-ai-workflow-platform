@@ -121,11 +121,16 @@ def run_request_workflow_endpoint(request_id: UUID, db: Session = Depends(get_db
     request.intent = final_state.get("intent")
     request.classification_confidence = final_state.get("confidence")
     request.classification_reasoning = final_state.get("reasoning")
-    request.retrieved_policy = final_state.get("retrieved_chunks") or None
+    # Not `X or None`: the graph's initial state always seeds these as `[]`/`{}`
+    # (see run_request_workflow), so a node that legitimately ran and found
+    # nothing (e.g. a plan with zero extractable arguments) is a real `{}`,
+    # not "this step never ran" - collapsing it to NULL broke templates that
+    # call `.items()`/iterate on it downstream.
+    request.retrieved_policy = final_state.get("retrieved_chunks")
     request.plan_tool_name = final_state.get("plan_tool_name")
-    request.plan_arguments = final_state.get("plan_arguments") or None
+    request.plan_arguments = final_state.get("plan_arguments")
     request.risk_level = final_state.get("risk_level")
-    request.risk_flags = final_state.get("risk_flags") or None
+    request.risk_flags = final_state.get("risk_flags")
     request.tool_execution_id = final_state.get("tool_execution_id")
     request.status = final_state["status"]
     request.final_response = final_state.get("final_response")

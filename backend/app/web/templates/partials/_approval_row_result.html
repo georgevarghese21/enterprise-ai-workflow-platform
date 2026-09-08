@@ -1,0 +1,10 @@
+<tr id="approval-row-{{ req.id }}">
+  <td colspan="6">
+    <strong>{{ req.raw_query|truncate(50) }}</strong> — {{ req.employee.name }}:
+    <span class="badge badge-{{ req.status|badge }}">{{ req.status.value }}</span>
+    <span class="muted small">
+      by {{ approver_employee.name if approver_employee else "employee #" ~ req.approver_employee_id }}
+    </span>
+    &middot; <a href="/requests/{{ req.id }}">view details</a>
+  </td>
+</tr>

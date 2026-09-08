@@ -8,9 +8,9 @@ human-in-the-loop approval, audit logging, and an evaluation harness — not a c
 > **NovaTech, its employees, policies, and internal APIs are entirely fictional.**
 > They exist only to give this project a realistic enterprise setting.
 
-This README grows with each implementation phase. It currently reflects **Phase 7**.
+This README grows with each implementation phase. It currently reflects **Phase 8**.
 
-## Status: Phase 7 — Audit logging and workflow timeline
+## Status: Phase 8 — Server-rendered frontend
 
 What exists so far:
 
@@ -139,15 +139,40 @@ What exists so far:
   workflow's branches, the approve/reject resume flow, and the audit timeline (event
   ordering, the info-only and escalation/approval paths, and the workflow_error path).
 
-Not yet implemented (later phases): the React frontend, the evaluation harness, and
-CI/CD. See the phase plan below.
+- A server-rendered frontend (Phase 8): FastAPI + Jinja2 + [htmx](https://htmx.org),
+  mounted alongside the JSON API in the same app/container (no separate frontend
+  toolchain, no build step, no npm). Pages: a dashboard, a request list (with a status
+  filter), a new-request form, a request detail page, an approval queue, and read-only
+  employees/resources reference pages.
+  - This was a deliberate substitute for the originally-planned React + TypeScript
+    frontend, chosen to avoid a from-scratch TypeScript/React learning curve. The web
+    routes (`app/web/routes.py`) call the same DB session and workflow-graph functions
+    the JSON API under `app/api/requests.py` uses directly, rather than making HTTP
+    calls to the JSON API from the server.
+  - The request detail page and approval queue use htmx to submit actions (run the
+    workflow, approve, reject) and swap in just the returned HTML fragment - no full
+    page reload, no client-side JavaScript logic of any kind.
+  - Fixed along the way: `request.plan_arguments`/`retrieved_policy`/`risk_flags` were
+    being collapsed from an empty container (`{}`/`[]`) to `NULL` via an `X or None`
+    idiom in both `app/api/requests.py` and the new web routes, which crashed the detail
+    template's `plan_arguments.items()` the first time a plan genuinely extracted zero
+    arguments (e.g. a data-access request naming a resource that doesn't exist). Fixed at
+    the source in both places - see the comments there - since it's a real distinction
+    ("this step ran and found nothing" vs. "this step never ran"), not just a template
+    workaround.
+- pytest suite (88 tests) additionally covering the web routes: page rendering, the
+  new-request form and redirect, the run/approve/reject htmx endpoints (including the
+  incomplete-plan error path rendering inline instead of crashing), and the status filter.
+
+Not yet implemented (later phases): the evaluation harness and CI/CD polish. See the
+phase plan below.
 
 ## Architecture (target — will fill in as phases land)
 
 ```mermaid
 flowchart LR
     subgraph Frontend
-        UI[React + TypeScript]
+        UI[Jinja2 + htmx]
     end
     subgraph Backend
         API[FastAPI]
@@ -172,7 +197,7 @@ flowchart LR
 - **Database:** PostgreSQL 16 with the `pgvector` extension
 - **AI (upcoming phases):** LangGraph, Anthropic/OpenAI-compatible provider abstraction,
   structured outputs via Pydantic, embeddings + RAG
-- **Frontend (upcoming):** React, TypeScript, Vite
+- **Frontend:** Server-rendered with FastAPI + Jinja2 + htmx (no separate build/toolchain)
 - **Infra:** Docker, Docker Compose, pytest, GitHub Actions
 
 ## Repository structure
@@ -192,13 +217,13 @@ backend/
     agents/         LangGraph node implementations and shared workflow state
     evaluation/     (later) evaluation harness
     workflows/      LangGraph graph definition (classify -> ... -> respond)
+    web/            server-rendered frontend: routes.py, Jinja2 templates, static CSS
     main.py
   alembic/         migrations
   tests/           pytest suite
 data/
   policies/        fictional NovaTech policy documents (markdown, source for RAG)
   evaluation/      (later) evaluation test cases
-frontend/          (later) React + TypeScript app
 docker-compose.yml
 ```
 
@@ -211,7 +236,10 @@ docker compose up --build
 
 This starts Postgres, applies Alembic migrations, seeds NovaTech's fictional
 employees/resources, ingests the policy documents under `data/policies/` for RAG,
-and starts the API at http://localhost:8000 (docs at http://localhost:8000/docs).
+and starts the API at http://localhost:8000 (docs at http://localhost:8000/docs). The
+web UI (Phase 8) is served from the same app at http://localhost:8000/ - submit a
+request at `/requests/new`, run its workflow, and review/approve anything that lands in
+the `/approvals` queue.
 
 ## Running tests
 
@@ -275,7 +303,7 @@ as a Compose environment override, and re-run `docker compose up --build`.
 5. ✅ LangGraph workflow (classify → retrieve → plan → risk check → execute → respond)
 6. ✅ Human-in-the-loop approvals with workflow pause/resume
 7. ✅ Audit logging and workflow timeline
-8. React + TypeScript frontend
+8. ✅ Frontend (server-rendered FastAPI + Jinja2 + htmx, in place of React + TypeScript)
 9. Evaluation harness with real, generated metrics
 10. Docker polish, CI/CD, documentation
 

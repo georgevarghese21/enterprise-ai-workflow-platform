@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Approvals — NovaTech AI Assistant{% endblock %}
+{% block content %}
+<h1>Approval queue</h1>
+<p class="subtitle">Requests waiting on a human decision, oldest first.</p>
+
+{% if pending %}
+<table>
+  <thead>
+    <tr><th>Request</th><th>Employee</th><th>Risk</th><th>Flags</th><th>Waiting since</th><th>Decision</th></tr>
+  </thead>
+  <tbody>
+    {% for r in pending %}
+    {% include "partials/_approval_row.html" %}
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">Nothing waiting on approval right now.</p>
+{% endif %}
+{% endblock %}
