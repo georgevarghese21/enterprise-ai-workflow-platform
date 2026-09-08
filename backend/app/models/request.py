@@ -58,6 +58,11 @@ class Request(Base):
         nullable=True,
     )
     final_response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approver_employee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("employees.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    approval_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -68,4 +73,4 @@ class Request(Base):
         nullable=False,
     )
 
-    employee: Mapped[Employee] = relationship("Employee")
+    employee: Mapped[Employee] = relationship("Employee", foreign_keys=[employee_id])

@@ -158,6 +158,15 @@ class WorkflowNodes:
         arguments = state.get("plan_arguments") or {}
 
         if tool_name == "grant_data_access":
+            if "resource_name" not in arguments:
+                raise ValueError(
+                    "Cannot execute grant_data_access: no resource_name in the plan. "
+                    "This request's plan was incomplete when it was escalated for "
+                    "approval - approving it doesn't supply the missing resource name, "
+                    "so it can't be auto-executed. Ask the employee to resubmit "
+                    "naming the resource explicitly, or call /api/tools/data-access "
+                    "directly with the correct resource."
+                )
             resource = self.db.scalar(
                 select(Resource).where(Resource.name == arguments["resource_name"])
             )
@@ -182,6 +191,13 @@ class WorkflowNodes:
                 "equipment_cost_usd": cost,
             }
         elif tool_name == "book_travel":
+            if "destination" not in arguments or "total_cost_usd" not in arguments:
+                raise ValueError(
+                    "Cannot execute book_travel: destination and/or total_cost_usd is "
+                    "missing from the plan. Approving an escalated request doesn't "
+                    "supply missing details - ask the employee to resubmit with the "
+                    "destination and cost stated explicitly."
+                )
             result = book_travel(
                 employee,
                 arguments["destination"],
@@ -194,6 +210,13 @@ class WorkflowNodes:
                 "total_cost_usd": arguments["total_cost_usd"],
             }
         elif tool_name == "submit_expense":
+            if "amount_usd" not in arguments:
+                raise ValueError(
+                    "Cannot execute submit_expense: amount_usd is missing from the "
+                    "plan. Approving an escalated request doesn't supply missing "
+                    "details - ask the employee to resubmit with a dollar amount "
+                    "stated explicitly."
+                )
             description = arguments.get("description", state["raw_query"])
             result = submit_expense(employee, arguments["amount_usd"], description)
             input_payload = {"amount_usd": arguments["amount_usd"], "description": description}
@@ -221,6 +244,47 @@ class WorkflowNodes:
         verified = execution is not None and execution.status == ToolExecutionStatus.APPROVED
         return {"status": WorkflowStatus.COMPLETED if verified else WorkflowStatus.FAILED}
 
+    def apply_decision(self, state: WorkflowState) -> dict[str, Any]:
+        """Entry node of the resume graph (Phase 6+): applies a human's
+        approve/reject decision to a request that's sitting at
+        AWAITING_APPROVAL, and figures out where the workflow should
+        continue from.
+
+        Two cases, distinguished by whether `tool_execution_id` is set:
+          - Not set: `risk_check` escalated *before* any tool ran (e.g. an
+            inactive employee, a low-confidence classification, an
+            incomplete plan). Approving means "go ahead and run the tool
+            now"; rejecting just ends the request with no tool ever called.
+          - Set: the tool itself already ran and returned PENDING_APPROVAL
+            (its own approval tier, e.g. MEDIUM/HIGH sensitivity data
+            access). Approving/rejecting overrides that tool_executions
+            row's status directly rather than calling the tool again.
+        """
+        decision = state["approval_decision"]
+        tool_execution_id = state.get("tool_execution_id")
+
+        if decision == "REJECTED":
+            if tool_execution_id:
+                execution = self.db.get(ToolExecution, tool_execution_id)
+                if execution is not None:
+                    execution.status = ToolExecutionStatus.DENIED
+                    self.db.commit()
+            return {"status": WorkflowStatus.REJECTED, "resolved_by_human": True}
+
+        # APPROVED
+        if tool_execution_id:
+            execution = self.db.get(ToolExecution, tool_execution_id)
+            if execution is not None:
+                execution.status = ToolExecutionStatus.APPROVED
+                self.db.commit()
+            return {
+                "tool_status": ToolExecutionStatus.APPROVED,
+                "status": WorkflowStatus.VERIFYING,
+                "resolved_by_human": True,
+            }
+
+        return {"status": WorkflowStatus.PLANNED, "resolved_by_human": True}
+
     def respond(self, state: WorkflowState) -> dict[str, Any]:
         status = state["status"]
         parts: list[str] = []
@@ -236,6 +300,8 @@ class WorkflowNodes:
             docs = sorted({c["document"] for c in chunks})
             parts.append(f"Relevant NovaTech policy: {', '.join(docs)}.")
 
+        resolved_by_human = state.get("resolved_by_human", False)
+
         if status == WorkflowStatus.POLICY_RETRIEVED:
             status = WorkflowStatus.COMPLETED
             parts.append(
@@ -243,9 +309,17 @@ class WorkflowNodes:
                 "excerpts above should answer it, or route it to the relevant team."
             )
         elif status == WorkflowStatus.COMPLETED:
-            parts.append("Approved and completed automatically.")
+            parts.append(
+                "Approved by a human reviewer and completed."
+                if resolved_by_human
+                else "Approved and completed automatically."
+            )
         elif status == WorkflowStatus.REJECTED:
-            parts.append("Denied under NovaTech policy.")
+            parts.append(
+                "Denied by a human reviewer."
+                if resolved_by_human
+                else "Denied under NovaTech policy."
+            )
         elif status == WorkflowStatus.AWAITING_APPROVAL:
             reason = ", ".join(state.get("risk_flags") or []) or "the applicable policy tier"
             parts.append(f"Needs human approval before it can proceed ({reason}).")
@@ -265,3 +339,11 @@ def route_after_risk_check(state: WorkflowState) -> str:
 
 def route_after_execute(state: WorkflowState) -> str:
     return "verify" if state["tool_status"] == ToolExecutionStatus.APPROVED else "respond"
+
+
+def route_after_decision(state: WorkflowState) -> str:
+    if state["status"] == WorkflowStatus.REJECTED:
+        return "respond"
+    if state["status"] == WorkflowStatus.VERIFYING:
+        return "verify"
+    return "execute"

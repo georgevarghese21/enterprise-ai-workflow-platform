@@ -8,9 +8,9 @@ human-in-the-loop approval, audit logging, and an evaluation harness — not a c
 > **NovaTech, its employees, policies, and internal APIs are entirely fictional.**
 > They exist only to give this project a realistic enterprise setting.
 
-This README grows with each implementation phase. It currently reflects **Phase 5**.
+This README grows with each implementation phase. It currently reflects **Phase 6**.
 
-## Status: Phase 5 — LangGraph workflow
+## Status: Phase 6 — Human-in-the-loop approvals
 
 What exists so far:
 
@@ -77,15 +77,43 @@ What exists so far:
   - `execute` calls the same Phase 4 tool functions and logs to `tool_executions` via a
     shared `persist_tool_execution` helper, so a workflow-triggered tool call is
     indistinguishable in the audit trail from one triggered directly via `/api/tools/*`.
-- pytest suite (63 tests) covering the API endpoints, RAG chunking/embedding/retrieval,
+- Human-in-the-loop approval (Phase 6): `GET /api/requests/pending-approval` lists every
+  request sitting at `AWAITING_APPROVAL` (the approval queue); `POST
+  /api/requests/{request_id}/approve` and `.../reject` resume a request's workflow with
+  a human's decision.
+  - Implemented as a second, smaller LangGraph graph (`build_resume_graph` in
+    `app/workflows/graph.py`: `apply_decision -> [execute -> verify] -> respond`) that
+    rehydrates its starting state from what the first graph run already persisted onto
+    the `Request` row - the row itself is the "checkpoint," rather than a separate
+    durable LangGraph checkpointer. That's a deliberate simplification: the graph always
+    runs synchronously start-to-finish within one request, so there's no long-running
+    process to checkpoint mid-node, and it avoids the correctness trade-offs of LangGraph's
+    native `interrupt()` mechanism (node code re-executing from the top on resume, so any
+    side effects before the interrupt point must be idempotent). A distributed or
+    long-running deployment would likely want the native checkpointer instead.
+  - Two situations resolve differently, both handled by the same `apply_decision` node:
+    a request escalated by `risk_check` *before* any tool ran (approving now runs the
+    tool for the first time; rejecting ends the request with no tool ever called), and a
+    request whose tool itself already returned `PENDING_APPROVAL` under its own approval
+    tier (approving/rejecting overrides that `tool_executions` row's status directly).
+  - Authorization is deliberately minimal for this phase: any *active* employee other
+    than the requester themselves can approve or reject (self-approval and approval by
+    an inactive employee are both rejected with 400). There's no real RBAC yet (e.g.
+    "must be the requester's manager," or "must be Security for a HIGH-sensitivity
+    resource") - a later phase could add that.
+  - Approving a request whose plan was incomplete when it escalated (e.g. no resource
+    name could be matched) fails cleanly with `422` rather than crashing - approval
+    doesn't fabricate missing data, so that case still needs a resubmission or a manual
+    tool call.
+- pytest suite (72 tests) covering the API endpoints, RAG chunking/embedding/retrieval,
   classification (including a network-free Ollama-provider test), the mock tools'
-  business rules and API wiring, and the LangGraph workflow's branches (auto-approval,
-  pending-approval, denial, policy-only response, and risk-based escalation).
+  business rules and API wiring, the LangGraph workflow's branches (auto-approval,
+  pending-approval, denial, policy-only response, and risk-based escalation), and the
+  approve/reject resume flow (both escalation cases, self-approval, inactive approver,
+  unknown approver, wrong request status, and the incomplete-plan failure path).
 
-Not yet implemented (later phases): pause/resume for human-in-the-loop approval (the
-workflow currently reaches `AWAITING_APPROVAL` as a terminal state but nothing can yet
-resume it), audit logging, the React frontend, the evaluation harness, and CI/CD. See
-the phase plan below.
+Not yet implemented (later phases): audit logging and a workflow timeline view, the
+React frontend, the evaluation harness, and CI/CD. See the phase plan below.
 
 ## Architecture (target — will fill in as phases land)
 
@@ -218,7 +246,7 @@ as a Compose environment override, and re-run `docker compose up --build`.
 3. ✅ LLM provider abstraction, structured request classification, mock LLM mode
 4. ✅ Mock enterprise tools (database/repo access, IT tickets, travel, expenses)
 5. ✅ LangGraph workflow (classify → retrieve → plan → risk check → execute → respond)
-6. Human-in-the-loop approvals with workflow pause/resume
+6. ✅ Human-in-the-loop approvals with workflow pause/resume
 7. Audit logging and workflow timeline
 8. React + TypeScript frontend
 9. Evaluation harness with real, generated metrics

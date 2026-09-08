@@ -41,6 +41,14 @@ class WorkflowState(TypedDict, total=False):
     tool_execution_id: UUID | None
     tool_status: ToolExecutionStatus | None
 
+    # Input to the resume graph's `apply_decision` node (Phase 6+); not used
+    # by the initial classify->respond run.
+    approval_decision: str  # "APPROVED" or "REJECTED"
+
+    # Set by `apply_decision` (Phase 6+), so `respond` can phrase its message
+    # accordingly - a human's decision reads differently from an automatic one.
+    resolved_by_human: bool
+
     # Updated by every node; finalized by `respond`.
     status: WorkflowStatus
     final_response: str | None

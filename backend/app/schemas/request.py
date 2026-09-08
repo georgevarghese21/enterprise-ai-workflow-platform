@@ -12,6 +12,11 @@ class RequestCreate(BaseModel):
     raw_query: str = Field(min_length=1, max_length=4000)
 
 
+class ApprovalDecisionRequest(BaseModel):
+    approver_employee_id: int
+    notes: str | None = Field(default=None, max_length=2000)
+
+
 class RequestRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -29,5 +34,8 @@ class RequestRead(BaseModel):
     risk_flags: list[str] | None
     tool_execution_id: uuid.UUID | None
     final_response: str | None
+    approver_employee_id: int | None
+    approval_notes: str | None
+    approved_at: datetime | None
     created_at: datetime
     updated_at: datetime
