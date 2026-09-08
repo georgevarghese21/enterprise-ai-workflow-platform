@@ -9,7 +9,17 @@ retrieved policy alone. `risk_check` can also short-circuit straight to
 request for human review, and `execute` skips `verify` whenever the tool
 call itself didn't come back APPROVED - see `app.agents.nodes` for exactly
 what each node does and why.
+
+Both graphs run via `.stream(..., stream_mode="updates")` rather than
+`.invoke()` (Phase 7): streaming yields one `{node_name: partial_state}`
+update per node as it completes, which `_run_graph_with_events` both folds
+into a running state dict (equivalent to what `.invoke()` would have
+returned, since every field here is last-write-wins) and logs as a
+`WorkflowEvent` - so the audit timeline comes from the graph's own
+execution trace instead of instrumenting every node individually.
 """
+
+from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 from sqlalchemy.orm import Session
@@ -23,6 +33,7 @@ from app.agents.nodes import (
 )
 from app.agents.state import WorkflowState
 from app.models.request import Request
+from app.services.audit import record_workflow_event
 
 
 def build_workflow_graph(db: Session):
@@ -55,6 +66,24 @@ def build_workflow_graph(db: Session):
     return graph.compile()
 
 
+def _run_graph_with_events(graph: Any, initial_state: WorkflowState, db: Session) -> WorkflowState:
+    request_id = initial_state["request_id"]
+    state: dict[str, Any] = dict(initial_state)
+    try:
+        for update in graph.stream(initial_state, stream_mode="updates"):
+            for node_name, partial in update.items():
+                state.update(partial)
+                record_workflow_event(db, request_id, node_name, partial)
+    except Exception as exc:
+        # A node raised (e.g. `execute` refusing to run an incomplete plan -
+        # see app.agents.nodes.WorkflowNodes.execute). Log the failure to the
+        # timeline before re-raising so it isn't silently missing from the
+        # audit trail just because this run didn't reach `respond`.
+        record_workflow_event(db, request_id, "workflow_error", {"error": str(exc)})
+        raise
+    return state  # type: ignore[return-value]
+
+
 def run_request_workflow(db: Session, request: Request) -> WorkflowState:
     """Run the full workflow for a request and return its final state.
 
@@ -74,7 +103,7 @@ def run_request_workflow(db: Session, request: Request) -> WorkflowState:
         "escalate": False,
         "status": request.status,
     }
-    return graph.invoke(initial_state)
+    return _run_graph_with_events(graph, initial_state, db)
 
 
 def build_resume_graph(db: Session):
@@ -131,4 +160,4 @@ def run_request_resume(db: Session, request: Request, decision: str) -> Workflow
         "approval_decision": decision,
         "status": request.status,
     }
-    return graph.invoke(initial_state)
+    return _run_graph_with_events(graph, initial_state, db)

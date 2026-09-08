@@ -7,5 +7,6 @@ from app.models.policy_chunk import PolicyChunk
 from app.models.request import Request
 from app.models.resource import Resource
 from app.models.tool_execution import ToolExecution
+from app.models.workflow_event import WorkflowEvent
 
-__all__ = ["Employee", "PolicyChunk", "Resource", "Request", "ToolExecution"]
+__all__ = ["Employee", "PolicyChunk", "Resource", "Request", "ToolExecution", "WorkflowEvent"]

@@ -8,9 +8,9 @@ human-in-the-loop approval, audit logging, and an evaluation harness — not a c
 > **NovaTech, its employees, policies, and internal APIs are entirely fictional.**
 > They exist only to give this project a realistic enterprise setting.
 
-This README grows with each implementation phase. It currently reflects **Phase 6**.
+This README grows with each implementation phase. It currently reflects **Phase 7**.
 
-## Status: Phase 6 — Human-in-the-loop approvals
+## Status: Phase 7 — Audit logging and workflow timeline
 
 What exists so far:
 
@@ -112,8 +112,35 @@ What exists so far:
   approve/reject resume flow (both escalation cases, self-approval, inactive approver,
   unknown approver, wrong request status, and the incomplete-plan failure path).
 
-Not yet implemented (later phases): audit logging and a workflow timeline view, the
-React frontend, the evaluation harness, and CI/CD. See the phase plan below.
+- Audit logging and a workflow timeline (Phase 7): every request now has a complete,
+  append-only history at `GET /api/requests/{request_id}/timeline`, ordered oldest
+  first.
+  - Nothing had to change inside `app/agents/nodes.py` to get this: both graphs now run
+    via `graph.stream(..., stream_mode="updates")` instead of `.invoke()`
+    (`_run_graph_with_events` in `app/workflows/graph.py`), which yields one
+    `{node_name: partial_state}` update per node as it completes. That's folded into a
+    running state dict (equivalent to what `.invoke()` would have returned, since every
+    field is last-write-wins) *and* written as a `workflow_events` row - so the timeline
+    comes from the graph's own execution trace, not from instrumenting each node.
+  - Two more events are logged directly by the API layer for things that happen outside
+    the graph: `request_created` (when a request is first submitted) and
+    `approval_decision` (who approved/rejected and their notes - distinct from the
+    `apply_decision` node event, which only captures the resulting state change).
+  - If a node raises (e.g. `execute` refusing an incomplete plan - see Phase 6), the
+    failure itself is logged as a `workflow_error` event before the exception
+    propagates, so a failed attempt still shows up in the audit trail even though that
+    run never reached `respond`.
+  - `workflow_events` is append-only and FK's to `requests` with `ON DELETE CASCADE`; it
+    exists specifically so a request's full history survives even when the `Request` row
+    itself gets overwritten by a later run (e.g. a second approval cycle after a tool
+    call comes back `PENDING_APPROVAL` a second time).
+- pytest suite (78 tests) covering the API endpoints, RAG chunking/embedding/retrieval,
+  classification, the mock tools' business rules and API wiring, the LangGraph
+  workflow's branches, the approve/reject resume flow, and the audit timeline (event
+  ordering, the info-only and escalation/approval paths, and the workflow_error path).
+
+Not yet implemented (later phases): the React frontend, the evaluation harness, and
+CI/CD. See the phase plan below.
 
 ## Architecture (target — will fill in as phases land)
 
@@ -247,7 +274,7 @@ as a Compose environment override, and re-run `docker compose up --build`.
 4. ✅ Mock enterprise tools (database/repo access, IT tickets, travel, expenses)
 5. ✅ LangGraph workflow (classify → retrieve → plan → risk check → execute → respond)
 6. ✅ Human-in-the-loop approvals with workflow pause/resume
-7. Audit logging and workflow timeline
+7. ✅ Audit logging and workflow timeline
 8. React + TypeScript frontend
 9. Evaluation harness with real, generated metrics
 10. Docker polish, CI/CD, documentation

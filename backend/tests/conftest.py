@@ -81,7 +81,7 @@ def _clean_tables():
         conn.execute(
             text(
                 "TRUNCATE TABLE requests, employees, resources, policy_chunks, "
-                "tool_executions RESTART IDENTITY CASCADE"
+                "tool_executions, workflow_events RESTART IDENTITY CASCADE"
             )
         )
 

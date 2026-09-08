@@ -9,7 +9,10 @@ from app.db.session import get_db
 from app.models.employee import Employee
 from app.models.enums import WorkflowStatus
 from app.models.request import Request
+from app.models.workflow_event import WorkflowEvent
 from app.schemas.request import ApprovalDecisionRequest, RequestCreate, RequestRead
+from app.schemas.workflow_event import WorkflowEventRead
+from app.services.audit import record_workflow_event
 from app.services.llm_provider import get_llm_provider
 from app.workflows.graph import run_request_resume, run_request_workflow
 
@@ -26,6 +29,14 @@ def create_request(payload: RequestCreate, db: Session = Depends(get_db)) -> Req
     db.add(request)
     db.commit()
     db.refresh(request)
+
+    record_workflow_event(
+        db,
+        request.id,
+        "request_created",
+        {"raw_query": request.raw_query},
+        actor=f"employee:{request.employee_id}",
+    )
     return request
 
 
@@ -55,6 +66,24 @@ def get_request(request_id: UUID, db: Session = Depends(get_db)) -> Request:
     if request is None:
         raise HTTPException(status_code=404, detail="Request not found")
     return request
+
+
+@router.get("/{request_id}/timeline", response_model=list[WorkflowEventRead])
+def get_request_timeline(request_id: UUID, db: Session = Depends(get_db)) -> list[WorkflowEvent]:
+    """The full audit trail for a request, oldest first: every workflow-graph
+    node it passed through (one event per node, `event_type` = node name),
+    plus `request_created` and `approval_decision` events logged directly by
+    this API. See `app.services.audit` for how these get written.
+    """
+    if db.get(Request, request_id) is None:
+        raise HTTPException(status_code=404, detail="Request not found")
+    return list(
+        db.scalars(
+            select(WorkflowEvent)
+            .where(WorkflowEvent.request_id == request_id)
+            .order_by(WorkflowEvent.created_at, WorkflowEvent.id)
+        )
+    )
 
 
 @router.post("/{request_id}/classify", response_model=RequestRead)
@@ -141,6 +170,14 @@ def _resolve_approval(
     request.approved_at = datetime.now(UTC)
     db.commit()
     db.refresh(request)
+
+    record_workflow_event(
+        db,
+        request.id,
+        "approval_decision",
+        {"decision": decision, "notes": payload.notes},
+        actor=f"employee:{payload.approver_employee_id}",
+    )
     return request
 
 
