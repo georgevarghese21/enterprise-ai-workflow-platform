@@ -5,7 +5,12 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.policy_chunk import PolicyChunk
 from app.rag.retrieve import search_policy_chunks
-from app.schemas.policy import PolicyDocumentSummary, PolicySearchRequest, PolicySearchResult
+from app.schemas.policy import (
+    PolicyChunkRead,
+    PolicyDocumentSummary,
+    PolicySearchRequest,
+    PolicySearchResult,
+)
 
 router = APIRouter(prefix="/api/policy", tags=["policy"])
 
@@ -15,7 +20,10 @@ def search_policy(
     payload: PolicySearchRequest, db: Session = Depends(get_db)
 ) -> list[PolicySearchResult]:
     results = search_policy_chunks(db, payload.query, payload.top_k)
-    return [PolicySearchResult(chunk=r.chunk, score=r.score) for r in results]
+    return [
+        PolicySearchResult(chunk=PolicyChunkRead.model_validate(r.chunk), score=r.score)
+        for r in results
+    ]
 
 
 @router.get("/documents", response_model=list[PolicyDocumentSummary])

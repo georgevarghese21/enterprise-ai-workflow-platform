@@ -6,6 +6,7 @@ else needs manager approval, plus Finance above $2,000.
 """
 
 import enum
+from typing import Any
 
 from app.models.employee import Employee
 from app.models.enums import ToolExecutionStatus
@@ -27,7 +28,7 @@ def create_it_ticket(
     description: str,
     equipment_cost_usd: float | None = None,
 ) -> ToolResult:
-    details = {"category": category.value, "description": description}
+    details: dict[str, Any] = {"category": category.value, "description": description}
     if equipment_cost_usd is not None:
         details["equipment_cost_usd"] = equipment_cost_usd
 

@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend (lint, type-check, migrations, tests)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: novatech
+          POSTGRES_PASSWORD: novatech
+          POSTGRES_DB: novatech
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U novatech -d novatech"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpq-dev
+
+      - name: Install backend package
+        working-directory: backend
+        run: pip install -e ".[dev]"
+
+      - name: Ruff
+        working-directory: backend
+        run: ruff check app tests
+
+      - name: Mypy
+        working-directory: backend
+        run: mypy app
+
+      # Independent of the pytest suite below, which builds its schema via
+      # Base.metadata.create_all() for speed - that would silently create
+      # the *current* models' schema even if someone forgot to write a
+      # migration for a model change. This step is what actually verifies
+      # alembic/versions/ applies cleanly to a fresh database.
+      - name: Apply migrations to a fresh database
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://novatech:novatech@localhost:5432/novatech
+        run: alembic upgrade head
+
+      - name: Pytest
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://novatech:novatech@localhost:5432/novatech_test
+        run: pytest -v

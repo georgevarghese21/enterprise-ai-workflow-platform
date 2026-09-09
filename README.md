@@ -1,5 +1,7 @@
 # Enterprise AI Workflow Automation Platform
 
+[![CI](https://github.com/georgevarghese21/enterprise-ai-workflow-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/georgevarghese21/enterprise-ai-workflow-platform/actions/workflows/ci.yml)
+
 An internal AI assistant for **NovaTech**, a fictional technology company, built to
 demonstrate production-style AI/backend engineering: structured LLM outputs, RAG over
 company policy documents, agentic workflows with tool calling, deterministic risk rules,
@@ -8,9 +10,11 @@ human-in-the-loop approval, audit logging, and an evaluation harness — not a c
 > **NovaTech, its employees, policies, and internal APIs are entirely fictional.**
 > They exist only to give this project a realistic enterprise setting.
 
-This README grows with each implementation phase. It currently reflects **Phase 9**.
+This README grows with each implementation phase. It currently reflects **Phase 10**,
+the last one in the original plan — see "Beyond the phase plan" at the bottom for
+honest, evaluation-harness-backed ideas for what would come next.
 
-## Status: Phase 9 — Evaluation harness
+## Status: Phase 10 — Docker polish, CI/CD, documentation (project complete)
 
 What exists so far:
 
@@ -105,13 +109,6 @@ What exists so far:
     name could be matched) fails cleanly with `422` rather than crashing - approval
     doesn't fabricate missing data, so that case still needs a resubmission or a manual
     tool call.
-- pytest suite (72 tests) covering the API endpoints, RAG chunking/embedding/retrieval,
-  classification (including a network-free Ollama-provider test), the mock tools'
-  business rules and API wiring, the LangGraph workflow's branches (auto-approval,
-  pending-approval, denial, policy-only response, and risk-based escalation), and the
-  approve/reject resume flow (both escalation cases, self-approval, inactive approver,
-  unknown approver, wrong request status, and the incomplete-plan failure path).
-
 - Audit logging and a workflow timeline (Phase 7): every request now has a complete,
   append-only history at `GET /api/requests/{request_id}/timeline`, ordered oldest
   first.
@@ -134,11 +131,6 @@ What exists so far:
     exists specifically so a request's full history survives even when the `Request` row
     itself gets overwritten by a later run (e.g. a second approval cycle after a tool
     call comes back `PENDING_APPROVAL` a second time).
-- pytest suite (78 tests) covering the API endpoints, RAG chunking/embedding/retrieval,
-  classification, the mock tools' business rules and API wiring, the LangGraph
-  workflow's branches, the approve/reject resume flow, and the audit timeline (event
-  ordering, the info-only and escalation/approval paths, and the workflow_error path).
-
 - A server-rendered frontend (Phase 8): FastAPI + Jinja2 + [htmx](https://htmx.org),
   mounted alongside the JSON API in the same app/container (no separate frontend
   toolchain, no build step, no npm). Pages: a dashboard, a request list (with a status
@@ -160,9 +152,6 @@ What exists so far:
     the source in both places - see the comments there - since it's a real distinction
     ("this step ran and found nothing" vs. "this step never ran"), not just a template
     workaround.
-- pytest suite (88 tests) additionally covering the web routes: page rendering, the
-  new-request form and redirect, the run/approve/reject htmx endpoints (including the
-  incomplete-plan error path rendering inline instead of crashing), and the status filter.
 - An evaluation harness (Phase 9): `app/evaluation/` runs a hand-written 22-case test set
   through the real workflow against a real database and reports intent classification,
   tool selection, risk classification, and approval routing accuracy; RAG recall@1/3/5;
@@ -178,10 +167,39 @@ What exists so far:
   evaluation runner - and while unifying them, fixed a real bug where the resume/approval
   path never carried `classification_reasoning` forward, silently wiping it to `NULL` on
   every approval.
-- pytest suite (98 tests) additionally covering the evaluation harness's pure metric
-  functions and the test-case loader.
+- Docker polish, CI/CD, and a documentation pass (Phase 10):
+  - The 5 `mypy` errors carried since Phase 5 (an untyped `dict` in `create_it_ticket`,
+    an ORM object passed where a Pydantic model was expected in `/api/policy/search`,
+    and the Anthropic SDK's `.parsed_output` being typed `T | None`) are fixed for real -
+    `mypy app` is clean with zero errors, not "clean except a known list."
+  - `backend/Dockerfile`: dependencies now install in their own cached layer (a minimal
+    placeholder package structure stands in until the real source is copied in after),
+    so editing application code no longer busts the slow `pip install` layer - verified
+    locally, a real code change now rebuilds in under a second instead of ~50s. Also adds
+    a `HEALTHCHECK` against `/health` and drops `--reload` from the image's own default
+    `CMD` (docker-compose.yml's dev `command:` still enables it, unchanged for local dev).
+  - `.github/workflows/ci.yml`: runs on every push/PR to `main` - `ruff check`, `mypy`,
+    `alembic upgrade head` against a fresh Postgres service container (independent of the
+    pytest suite's own `Base.metadata.create_all()`-based schema setup, so it actually
+    verifies the migration chain applies cleanly and hasn't drifted from the models), and
+    the full pytest suite. Verified locally end to end in a bare virtualenv (not the
+    Docker image) against the same Postgres before being trusted here, since a bare-venv
+    CI runner is a meaningfully different environment from what every other phase was
+    tested in.
+  - Removed the empty `frontend/` placeholder's `node_modules/`/`frontend/dist/`
+    `.gitignore` entries (dead since Phase 8 replaced that plan) and cleaned up a couple
+    of stale "(later)" repository-structure lines left over from Phase 1's original
+    scaffold description.
+- pytest suite: **98 tests**, all passing - API endpoints; RAG chunking, embedding, and
+  retrieval; classification (including a network-free Ollama-provider test); the mock
+  tools' business rules and API wiring; the LangGraph workflow's branches (auto-approval,
+  pending-approval, denial, policy-only response, risk-based escalation); the
+  approve/reject resume flow; the audit timeline; the web routes; and the evaluation
+  harness's pure metric functions and test-case loader.
 
-Not yet implemented (later phases): CI/CD polish. See the phase plan below.
+All 10 planned phases are complete. See "Beyond the phase plan" below for what a next
+phase would realistically tackle, grounded in what Phase 9's evaluation run actually
+found rather than a generic wishlist.
 
 ## Architecture (target — will fill in as phases land)
 
@@ -211,8 +229,8 @@ flowchart LR
 
 - **Backend:** Python 3.12, FastAPI, SQLAlchemy 2.0, Alembic, Pydantic v2
 - **Database:** PostgreSQL 16 with the `pgvector` extension
-- **AI (upcoming phases):** LangGraph, Anthropic/OpenAI-compatible provider abstraction,
-  structured outputs via Pydantic, embeddings + RAG
+- **AI:** LangGraph (workflow orchestration), an Anthropic/Ollama/mock provider
+  abstraction with structured outputs via Pydantic, RAG over `pgvector`
 - **Frontend:** Server-rendered with FastAPI + Jinja2 + htmx (no separate build/toolchain)
 - **Infra:** Docker, Docker Compose, pytest, GitHub Actions
 
@@ -320,7 +338,7 @@ as a Compose environment override, and re-run `docker compose up --build`.
 7. ✅ Audit logging and workflow timeline
 8. ✅ Frontend (server-rendered FastAPI + Jinja2 + htmx, in place of React + TypeScript)
 9. ✅ Evaluation harness with real, generated metrics
-10. Docker polish, CI/CD, documentation
+10. ✅ Docker polish, CI/CD, documentation
 
 ## Evaluation
 
@@ -395,3 +413,32 @@ dev database.
 
 _Text-based; see "Using the web UI" above and the templates under
 `backend/app/web/templates/` - a screenshot pass could be added later._
+
+## Beyond the phase plan
+
+All 10 phases from the original plan are done. These aren't a generic "future work"
+wishlist - each one is a specific, real gap the project itself surfaced (mostly via the
+Phase 9 evaluation run), in rough priority order:
+
+1. **Swap in a real embedding provider for RAG.** The Phase 9 run measured RAG recall@1
+   at just 57% with the mock (feature-hashing) embedding provider - see "Evaluation"
+   above for the specific misranked example. The provider abstraction
+   (`app/rag/embeddings.py`) already supports this the same way `app/services/llm_provider.py`
+   does for classification; this is a config change plus an API key, not new code.
+2. **Tighten `risk_check`'s risk-level assessment.** It only bumps `risk_level` above
+   `LOW` for HIGH-sensitivity data access or expenses over $1,000, understating risk for
+   MEDIUM-sensitivity resources and the $100-$1,000 expense tier (both still correctly
+   require approval via the tool's own rules - only the informational `risk_level` field
+   undersells it). Also flagged by the Phase 9 run.
+3. **Real RBAC for approvals**, replacing the current "any active employee but the
+   requester" rule (see Phase 6) - e.g. requiring the requester's actual manager, or
+   matching the specific department a tool's message names (Security co-approval for a
+   contractor's HIGH-sensitivity access, Finance for equipment over $2,000).
+4. **A durable LangGraph checkpointer** if this workflow ever needed to run as a
+   genuinely long-lived, distributed process - the current `Request`-row-as-checkpoint
+   approach (see Phase 6) is a deliberate, documented trade-off that fits a
+   request/response backend, not a hard limitation nobody noticed.
+5. **Grow the evaluation test set.** 22 hand-written cases is enough to catch real,
+   specific issues (as it did), but nowhere near enough for statistically meaningful
+   percentages - more cases per intent, particularly around the classifier's keyword-tie
+   failure mode, would sharpen the numbers.

@@ -266,6 +266,8 @@ class AnthropicLLMProvider:
             messages=[{"role": "user", "content": raw_query}],
             output_format=RequestClassification,
         )
+        if response.parsed_output is None:
+            raise RuntimeError("Anthropic response did not include a parsed structured output")
         return response.parsed_output
 
     def plan(
@@ -285,6 +287,8 @@ class AnthropicLLMProvider:
             output_format=ToolPlan,
         )
         plan = response.parsed_output
+        if plan is None:
+            raise RuntimeError("Anthropic response did not include a parsed structured output")
         plan.tool_name = _INTENT_TOOL_NAME[intent]
         return plan
 
