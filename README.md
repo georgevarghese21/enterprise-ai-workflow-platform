@@ -197,6 +197,41 @@ What exists so far:
   approve/reject resume flow; the audit timeline; the web routes; and the evaluation
   harness's pure metric functions and test-case loader.
 
+### Beyond Phase 10: a real multi-provider AI layer
+
+Work continued past the original 10-phase plan, driven by actually trying real AI models
+against this project rather than stopping at the mock baseline:
+
+- **Fixed a real crash**: `execute()` raised a raw `KeyError` when a plan was missing a
+  required argument (e.g. `create_it_ticket` with no `category` - a real local model's
+  structured output legitimately omitted it rather than guessing). `risk_check` now
+  catches this and escalates to human review; `execute()` has a matching defensive check.
+  Found by testing against real AI, not by inspection.
+- **Fixed the classification prompt**: it used to hand the model 9 bare category names
+  with zero description of what they mean. A frontier model can infer the intent from
+  labels alone; a small local model (Qwen2.5:7b) couldn't, and confidently reasoned its
+  way to wrong answers (18% intent accuracy - worse than random guessing). Explicit
+  per-category descriptions (`_INTENT_DESCRIPTIONS` in `app/services/llm_provider.py`)
+  fix this for every provider, not just the one that exposed it.
+- **Added `GroqLLMProvider`** (`LLM_MODE=groq`) - a free, no-card-required hosted API -
+  with retry/backoff for its free-tier rate limits (`GroqLLMProvider._chat_json`; it's a
+  reasoning model that burns tokens-per-minute budget fast under back-to-back load). See
+  "Using Groq" above.
+- **Added `CascadeLLMProvider`** (`LLM_MODE=cascade`) - classify with the free mock first,
+  only call Groq when the mock's own confidence is below 0.8. Real, measured result: 100%
+  accuracy on the evaluation test set using ~13 real API calls instead of ~40, in 12s
+  instead of 1m48s. See "Provider comparison" below for the full numbers.
+- **Added provider tracking**: every request now records which provider actually answered
+  it - `classifier_provider`/`planner_provider` on the `Request` row (via a `provider_name`
+  on every `LLMProvider` implementation - a plain attribute for the static providers, a
+  property on `CascadeLLMProvider` that reflects whichever one handled the most recent
+  call), shown on the web UI's Classification/Tool Plan cards as "Answered by: mock" or
+  "Answered by: groq." Before this, the only way to tell cascade had escalated was
+  noticing the mock's confidence score is capped at 95% while a real model's isn't - now
+  it's just shown directly.
+- pytest suite grew to **107 tests** covering all of the above (the Groq provider, its
+  retry/backoff, the cascade routing logic, and provider-name tracking).
+
 All 10 planned phases are complete. See "Beyond the phase plan" below for what a next
 phase would realistically tackle, grounded in what Phase 9's evaluation run actually
 found rather than a generic wishlist.

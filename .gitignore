@@ -12,5 +12,8 @@ __pycache__/
 # Personal local overrides (e.g. switching LLM_MODE to ollama/anthropic)
 docker-compose.override.yml
 
+# Local-only Claude Code guidance - kept off GitHub on request
+CLAUDE.md
+
 # OS
 .DS_Store
