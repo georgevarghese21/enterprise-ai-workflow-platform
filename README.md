@@ -287,17 +287,26 @@ DATABASE_URL=postgresql+psycopg://novatech:novatech@localhost:5432/novatech_test
 
 or inside Docker (the `DATABASE_URL` override is required — without it, `pytest` inherits
 Compose's `novatech` dev-database URL, and the test suite's teardown will wipe the dev
-database's tables):
+database's tables; the `LLM_MODE` override is required too if you have a local
+`docker-compose.override.yml` switching it to `ollama`/`anthropic` for manual testing —
+`docker compose run` picks that up same as `up` does, and the test suite is written
+assuming the deterministic `mock` provider, not a real model's non-deterministic output):
 
 ```bash
-docker compose run --rm -e DATABASE_URL=postgresql+psycopg://novatech:novatech@postgres:5432/novatech_test backend pytest
+docker compose run --rm \
+  -e DATABASE_URL=postgresql+psycopg://novatech:novatech@postgres:5432/novatech_test \
+  -e LLM_MODE=mock \
+  backend pytest
 ```
 
 ## Environment variables
 
 See [`.env.example`](.env.example). `LLM_MODE=mock` (the default) runs the system with
 no external LLM calls — used for local dev and CI. `LLM_MODE=anthropic` and
-`LLM_MODE=ollama` switch on the real provider integrations added in Phase 3.
+`LLM_MODE=ollama` switch on the real provider integrations added in Phase 3;
+`LLM_MODE=groq` (a free hosted API) and `LLM_MODE=cascade` (mock first, Groq only when
+unsure) were added later — see "Using Groq" below and "Evaluation" for real numbers on
+all four.
 
 ## Using a local Ollama model
 
@@ -326,6 +335,32 @@ sudo ufw allow from <subnet-from-above> to any port 11434
 
 Then set `LLM_MODE=ollama` (and optionally `OLLAMA_MODEL=<other model>`) in `.env` or
 as a Compose environment override, and re-run `docker compose up --build`.
+
+## Using Groq (a free hosted API)
+
+[Groq](https://console.groq.com) hosts open-weight models and its free tier needs no
+credit card and doesn't expire - a practical alternative to Ollama when the local
+machine can't run a model large enough to be reliable (see "Evaluation" below for why
+that matters: a 3-7B local model scored *worse than random guessing* at this project's
+classification task, while Groq's hosted ~120B model scored 100%). Sign up, create an
+API key under **API Keys**, then set:
+
+```bash
+LLM_MODE=groq
+GROQ_API_KEY=gsk_...
+```
+
+as a `.env` entry or Compose environment override, and re-run `docker compose up --build`.
+Groq's model lineup changes over time; `GROQ_MODEL` in `app/services/llm_provider.py`
+pins a specific one, so check Groq's `/v1/models` endpoint if it ever 404s.
+
+**`LLM_MODE=cascade`** is a variant worth using over plain `groq`: it classifies every
+request with the free mock provider first, and only calls Groq when the mock's own
+confidence comes back below 0.8 (`CascadeLLMProvider.CONFIDENCE_THRESHOLD` in
+`app/services/llm_provider.py`). On this project's 22-case test set that cut real API
+calls by roughly two-thirds (13 calls instead of ~40) while matching or beating plain
+Groq's accuracy - see "Evaluation" for the actual numbers. Needs `GROQ_API_KEY` set the
+same as `groq` mode; the mock handles the rest for free.
 
 ## Phase plan
 
@@ -409,6 +444,54 @@ to whatever database it's pointed at each time (it exercises the real system, so
 expected) - point it at a disposable database, or don't worry about the extra rows in a
 dev database.
 
+### Provider comparison: is a real AI model actually better?
+
+The table above is `LLM_MODE=mock`, the zero-setup default. Out of curiosity (and to
+answer that question honestly instead of assuming), the same 22 cases were also run
+against three real providers - **also actual runs**, not estimates:
+
+| Metric | Mock | Qwen2.5:7b (local, Ollama) | Groq / gpt-oss-120b | Groq cascade |
+| --- | --- | --- | --- | --- |
+| Intent accuracy | 91% | 18%\* | 100% | 100% |
+| Tool selection | 100% | 30%\* | 100% | 100% |
+| Risk classification | 100% | 50%\* | 95%\*\* | 100% |
+| Approval routing | 100% | 55%\* | 95%\*\* | 100% |
+| Real API/model calls made | 0 | 22+ | ~40 | 13 |
+| Wall-clock time | seconds | ~4 min | 1m48s | 12s |
+
+\* Qwen's collapse traces to one specific, fixable cause, not the model being
+inherently bad: this project's classification prompt (`_CLASSIFICATION_SYSTEM_PROMPT`
+in `app/services/llm_provider.py`) used to hand the model 9 bare category *names*
+(`DATA_ACCESS`, `TIME_OFF`, ...) with no description of what any of them mean. A
+frontier-scale model like Claude can apparently infer the intended meaning from the
+label alone; a 7B model can't, and confidently reasoned its way to wrong answers
+instead ("vacation days can be considered under expense reimbursement"). The prompt
+now spells out what each of the 9 categories actually covers
+(`_INTENT_DESCRIPTIONS`), which is a real fix that helps every provider, not a Qwen
+workaround.
+
+\*\* Groq's one "miss" on each of these (the same case, `it_sw_preapproved_auto` -
+"a software license for Slack") isn't really wrong: its own planning prompt tells it to
+omit an argument rather than guess when unsure, and it has no way to know NovaTech's
+internal pre-approved-software list isn't in the retrieved policy text either - so it
+correctly left the field blank and let `risk_check` escalate to a human instead of
+guessing. The mock only "gets this right" because it has that specific list hardcoded.
+
+**The cascade result is the interesting one**: classify with the free mock first, and
+only call Groq when the mock's own confidence is below 0.8 (see "Using Groq" above).
+It matched the mock's 0 cost on 9 of the 22 cases, escalated the rest, and landed at
+**100% across the board with less than a third of Groq's own API calls** - because the
+mock's hardcoded knowledge (e.g. that Slack is pre-approved) fixed the one case plain
+Groq got "wrong," while genuinely ambiguous cases (the two hard-coded hard cases) still
+got the smarter model. This is the config actually worth running if real accuracy
+matters and free-tier rate limits or per-token cost are a concern - see the retry/backoff
+handling for Groq's 429s in `GroqLLMProvider._chat_json`, needed because gpt-oss-120b is
+a reasoning model that burns through the free tier's tokens-per-minute budget fast under
+back-to-back load (a live one-request-at-a-time workload won't notice this).
+
+None of this changes RAG recall@1 (57%) - retrieval is driven by `EMBEDDING_PROVIDER`,
+a separate setting still on the mock embedding provider regardless of `LLM_MODE`.
+
 ## Screenshots
 
 _Text-based; see "Using the web UI" above and the templates under
@@ -420,11 +503,14 @@ All 10 phases from the original plan are done. These aren't a generic "future wo
 wishlist - each one is a specific, real gap the project itself surfaced (mostly via the
 Phase 9 evaluation run), in rough priority order:
 
-1. **Swap in a real embedding provider for RAG.** The Phase 9 run measured RAG recall@1
-   at just 57% with the mock (feature-hashing) embedding provider - see "Evaluation"
-   above for the specific misranked example. The provider abstraction
-   (`app/rag/embeddings.py`) already supports this the same way `app/services/llm_provider.py`
-   does for classification; this is a config change plus an API key, not new code.
+1. **Swap in a real embedding provider for RAG.** Still open: the classification side of
+   this got solved (see "Using Groq" / "Provider comparison" above - `LLM_MODE=cascade`
+   gets 100% intent accuracy for a fraction of the API calls), but RAG recall@1 is still
+   57% regardless of `LLM_MODE`, because retrieval runs through a *separate* setting,
+   `EMBEDDING_PROVIDER`, which is still the mock feature-hashing implementation. The
+   provider abstraction (`app/rag/embeddings.py`) already supports swapping this the same
+   way `llm_provider.py` does for classification; this is a config change plus an API
+   key, not new code.
 2. **Tighten `risk_check`'s risk-level assessment.** It only bumps `risk_level` above
    `LOW` for HIGH-sensitivity data access or expenses over $1,000, understating risk for
    MEDIUM-sensitivity resources and the $100-$1,000 expense tier (both still correctly

@@ -140,7 +140,11 @@ class WorkflowNodes:
                 risk_level = _max_risk(risk_level, RiskLevel.MEDIUM)
 
         elif tool_name == "create_it_ticket":
-            if arguments.get("category") in ("EQUIPMENT_NON_STANDARD", "SOFTWARE_NEW"):
+            if "category" not in arguments:
+                flags.append("incomplete_tool_arguments")
+                escalate = True
+                risk_level = _max_risk(risk_level, RiskLevel.MEDIUM)
+            elif arguments["category"] in ("EQUIPMENT_NON_STANDARD", "SOFTWARE_NEW"):
                 risk_level = _max_risk(risk_level, RiskLevel.MEDIUM)
 
         return {
@@ -181,6 +185,15 @@ class WorkflowNodes:
                 "duration_days": arguments.get("duration_days"),
             }
         elif tool_name == "create_it_ticket":
+            if "category" not in arguments:
+                raise ValueError(
+                    "Cannot execute create_it_ticket: no category in the plan. "
+                    "This request's plan was incomplete when it was escalated for "
+                    "approval - approving it doesn't supply the missing category, "
+                    "so it can't be auto-executed. Ask the employee to resubmit "
+                    "describing the request more specifically, or call "
+                    "/api/tools/it-ticket directly with the correct category."
+                )
             category = ITTicketCategory(arguments["category"])
             description = arguments.get("description", state["raw_query"])
             cost = arguments.get("equipment_cost_usd")

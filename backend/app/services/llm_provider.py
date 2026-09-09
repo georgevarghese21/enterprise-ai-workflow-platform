@@ -9,6 +9,7 @@ structured outputs, so the response always validates against
 """
 
 import re
+import time
 from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
@@ -18,11 +19,52 @@ from app.models.enums import RequestIntent
 from app.tools.it_ticket import ITTicketCategory
 
 ANTHROPIC_MODEL = "claude-opus-5"
+GROQ_MODEL = "openai/gpt-oss-120b"
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+
+# What each intent actually means, spelled out for the classifier. A large
+# frontier model can often infer this correctly from the bare enum label
+# names alone (DATA_ACCESS, TIME_OFF, ...), but a smaller model reliably
+# can't - without these descriptions, evaluation showed a 7B local model
+# scoring *worse than random guessing* at this task, confidently reasoning
+# its way to the wrong category (e.g. "vacation days can be considered
+# under expense reimbursement"). Explicit descriptions fix that regardless
+# of which provider is in use.
+_INTENT_DESCRIPTIONS: dict[RequestIntent, str] = {
+    RequestIntent.DATA_ACCESS: (
+        "Requesting access to a database, code repository, or cloud account "
+        "(e.g. \"I need access to the X database/repo\")."
+    ),
+    RequestIntent.IT_EQUIPMENT: (
+        "Requesting physical hardware: a laptop, monitor, keyboard, or other equipment."
+    ),
+    RequestIntent.IT_SOFTWARE: (
+        "Requesting a software license, or to install/use an application or tool."
+    ),
+    RequestIntent.TRAVEL_BOOKING: "Requesting to book a flight, hotel, or other business travel.",
+    RequestIntent.EXPENSE_REIMBURSEMENT: (
+        "Requesting reimbursement for money already spent (a receipt/expense) - "
+        "not a request to book or pay for something in advance."
+    ),
+    RequestIntent.TIME_OFF: "Asking about or requesting vacation, PTO, or a day off.",
+    RequestIntent.REMOTE_WORK: "Asking about or requesting to work from home / remotely.",
+    RequestIntent.SECURITY_INCIDENT: (
+        "Reporting a lost or stolen device, phishing, unauthorized access, or "
+        "another security concern."
+    ),
+    RequestIntent.OTHER: "Anything that does not clearly match one of the above categories.",
+}
+
+
+def _format_intent_descriptions() -> str:
+    return "\n".join(f"- {intent.value}: {desc}" for intent, desc in _INTENT_DESCRIPTIONS.items())
+
 
 _CLASSIFICATION_SYSTEM_PROMPT = (
     "You are the request classification step of NovaTech's internal AI workflow "
-    "assistant. Read the employee's request and classify it into exactly one "
-    "intent category, with a confidence score and a one-sentence reason."
+    "assistant. Read the employee's request and classify it into exactly one of "
+    "the following intent categories, with a confidence score and a one-sentence "
+    "reason.\n\n" + _format_intent_descriptions()
 )
 
 _PLANNING_SYSTEM_PROMPT = (
@@ -357,6 +399,127 @@ class OllamaLLMProvider:
         return plan
 
 
+class GroqLLMProvider:
+    """Real classifier backed by Groq's hosted API (OpenAI-compatible).
+
+    Groq's free tier requires no credit card and doesn't expire, and serves
+    much larger open-weight models (`GROQ_MODEL`, currently OpenAI's
+    open-weight gpt-oss-120b - check Groq's `/models` endpoint for their
+    current lineup, since it changes over time) than anything practical to
+    run locally. Unlike Anthropic's or Ollama's structured-output modes,
+    Groq's OpenAI-compatible `response_format: json_object` only guarantees
+    valid JSON, not a specific schema - so the target schema is spelled out
+    as text in the prompt instead, and the response is validated against
+    the Pydantic model afterward the same way as every other provider.
+    """
+
+    def __init__(self) -> None:
+        import httpx
+
+        settings = get_settings()
+        if not settings.groq_api_key:
+            raise RuntimeError("GROQ_API_KEY must be set to use LLM_MODE=groq")
+        self._client = httpx.Client(
+            base_url=GROQ_BASE_URL,
+            headers={"Authorization": f"Bearer {settings.groq_api_key}"},
+            timeout=httpx.Timeout(60.0),
+        )
+
+    def _chat_json(self, system: str, user: str, schema_model: type[BaseModel]) -> str:
+        schema_instruction = (
+            "Respond with ONLY a single JSON object (no other text, no markdown "
+            f"fences) matching this JSON schema:\n{schema_model.model_json_schema()}"
+        )
+        payload = {
+            "model": GROQ_MODEL,
+            "messages": [
+                {"role": "system", "content": f"{system}\n\n{schema_instruction}"},
+                {"role": "user", "content": user},
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0,
+        }
+
+        # The free tier's tokens-per-minute budget (not the request-count
+        # limit) is what actually gets hit in practice - gpt-oss-120b is a
+        # reasoning model that spends extra tokens on chain-of-thought even
+        # for a trivial classification, so a burst of calls (e.g. the
+        # evaluation harness running 22 cases back to back) can exhaust it
+        # well before hitting any request-count ceiling. Retry with backoff
+        # rather than failing the whole request outright.
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            response = self._client.post("/chat/completions", json=payload)
+            if response.status_code != 429:
+                response.raise_for_status()
+                return str(response.json()["choices"][0]["message"]["content"])
+            if attempt == max_attempts - 1:
+                response.raise_for_status()
+            retry_after = response.headers.get("retry-after")
+            wait_seconds = float(retry_after) if retry_after else 2.0 ** attempt
+            time.sleep(wait_seconds)
+
+        raise RuntimeError("unreachable")  # loop always returns or raises above
+
+    def classify(self, raw_query: str) -> RequestClassification:
+        content = self._chat_json(_CLASSIFICATION_SYSTEM_PROMPT, raw_query, RequestClassification)
+        return RequestClassification.model_validate_json(content)
+
+    def plan(
+        self, intent: RequestIntent, raw_query: str, known_resource_names: list[str]
+    ) -> ToolPlan:
+        if intent not in _INTENT_TOOL_NAME:
+            return ToolPlan(
+                tool_name=None, notes=f"No automatable tool exists for intent {intent.value}."
+            )
+
+        prompt = _build_planning_prompt(intent, raw_query, known_resource_names)
+        content = self._chat_json(_PLANNING_SYSTEM_PROMPT, prompt, ToolPlan)
+        plan = ToolPlan.model_validate_json(content)
+        plan.tool_name = _INTENT_TOOL_NAME[intent]
+        return plan
+
+
+class CascadeLLMProvider:
+    """Free by default, real AI only when the free path is unsure.
+
+    Classifies every request with `MockLLMProvider` first (free, instant,
+    no network call). Only when that classification comes back below
+    `CONFIDENCE_THRESHOLD` - the two known "hard" cases in the evaluation
+    test set score 0.65, well below the 0.8+ mock gives routine requests -
+    does it re-classify with a real model (`GroqLLMProvider` by default).
+    Evaluated end to end: this reduces real-AI calls to a minority of
+    requests while still catching the cases the mock gets wrong, at zero
+    accuracy cost on this project's 22-case test set (see the README).
+
+    One instance is scoped to a single request's full graph run (a fresh
+    `WorkflowNodes`, and so a fresh LLM provider, is built per run - see
+    `app.workflows.graph`), so remembering "did classify escalate" as
+    instance state and reusing it in `plan()` is safe: it can't leak
+    between unrelated requests.
+    """
+
+    CONFIDENCE_THRESHOLD = 0.8
+
+    def __init__(self, fallback: LLMProvider | None = None) -> None:
+        self._mock = MockLLMProvider()
+        self._fallback = fallback if fallback is not None else GroqLLMProvider()
+        self._escalated = False
+
+    def classify(self, raw_query: str) -> RequestClassification:
+        result = self._mock.classify(raw_query)
+        self._escalated = result.confidence < self.CONFIDENCE_THRESHOLD
+        if self._escalated:
+            return self._fallback.classify(raw_query)
+        return result
+
+    def plan(
+        self, intent: RequestIntent, raw_query: str, known_resource_names: list[str]
+    ) -> ToolPlan:
+        provider = self._fallback if self._escalated else self._mock
+        return provider.plan(intent, raw_query, known_resource_names)
+
+
 def get_llm_provider() -> LLMProvider:
     settings = get_settings()
     if settings.llm_mode == "mock":
@@ -365,7 +528,11 @@ def get_llm_provider() -> LLMProvider:
         return AnthropicLLMProvider()
     if settings.llm_mode == "ollama":
         return OllamaLLMProvider()
+    if settings.llm_mode == "groq":
+        return GroqLLMProvider()
+    if settings.llm_mode == "cascade":
+        return CascadeLLMProvider()
     raise NotImplementedError(
         f"LLM mode {settings.llm_mode!r} is not implemented yet; "
-        "use 'mock', 'anthropic', or 'ollama'."
+        "use 'mock', 'anthropic', 'ollama', 'groq', or 'cascade'."
     )

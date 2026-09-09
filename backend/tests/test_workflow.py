@@ -1,5 +1,7 @@
 """Integration tests for the Phase 5 LangGraph workflow, via /api/requests/{id}/run."""
 
+import pytest
+
 from app.agents.nodes import WorkflowNodes
 from app.models.employee import Employee
 from app.models.enums import (
@@ -167,3 +169,41 @@ def test_risk_check_escalates_low_confidence_classification(db_session, sample_e
 
     assert result["escalate"] is True
     assert "low_classification_confidence" in result["risk_flags"]
+
+
+def test_risk_check_escalates_it_ticket_plan_missing_category(db_session, sample_employee):
+    """A real LLM provider's plan() can legitimately return an empty
+    arguments dict (e.g. a query that doesn't cleanly fit any IT ticket
+    category) - risk_check must catch a missing 'category' the same way it
+    already catches a missing resource_name/destination/amount_usd,
+    instead of silently letting execute() crash on a raw KeyError.
+    """
+    nodes = WorkflowNodes(db_session)
+    state = {
+        "employee_id": sample_employee.id,
+        "confidence": 0.9,
+        "plan_tool_name": "create_it_ticket",
+        "plan_arguments": {},
+        "status": WorkflowStatus.PLANNED,
+    }
+
+    result = nodes.risk_check(state)
+
+    assert result["escalate"] is True
+    assert "incomplete_tool_arguments" in result["risk_flags"]
+
+
+def test_execute_raises_clean_error_for_it_ticket_plan_missing_category(
+    db_session, sample_employee
+):
+    nodes = WorkflowNodes(db_session)
+    state = {
+        "employee_id": sample_employee.id,
+        "raw_query": "I lost my laptop, what should I do?",
+        "request_id": None,
+        "plan_tool_name": "create_it_ticket",
+        "plan_arguments": {},
+    }
+
+    with pytest.raises(ValueError, match="no category in the plan"):
+        nodes.execute(state)

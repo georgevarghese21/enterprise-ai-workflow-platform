@@ -9,6 +9,8 @@ __pycache__/
 
 # Env
 .env
+# Personal local overrides (e.g. switching LLM_MODE to ollama/anthropic)
+docker-compose.override.yml
 
 # OS
 .DS_Store

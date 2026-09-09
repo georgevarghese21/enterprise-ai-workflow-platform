@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     llm_mode: str = "mock"
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
+    groq_api_key: str | None = None
     # Ollama runs locally and is free (no API key). The default host works
     # for the backend running outside Docker; docker-compose.yml overrides
     # it to http://host.docker.internal:11434 so the container can reach an
