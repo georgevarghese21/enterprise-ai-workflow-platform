@@ -28,6 +28,8 @@
       <dt>Intent</dt><dd>{{ req.intent.value }}</dd>
       <dt>Confidence</dt><dd>{{ "%.0f"|format(req.classification_confidence * 100) }}%</dd>
       <dt>Reasoning</dt><dd>{{ req.classification_reasoning }}</dd>
+      <dt>Answered by</dt>
+      <dd><span class="badge badge-neutral">{{ req.classifier_provider or "unknown" }}</span></dd>
     </dl>
   </div>
   {% endif %}
@@ -52,6 +54,8 @@
       <dd class="mono">
         {% for k, v in req.plan_arguments.items() %}{{ k }}: {{ v }}{% if not loop.last %}, {% endif %}{% endfor %}
       </dd>
+      <dt>Answered by</dt>
+      <dd><span class="badge badge-neutral">{{ req.planner_provider or "unknown" }}</span></dd>
     </dl>
   </div>
   {% endif %}

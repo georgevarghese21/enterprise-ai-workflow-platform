@@ -27,9 +27,11 @@ class RequestRead(BaseModel):
     intent: RequestIntent | None
     classification_confidence: float | None
     classification_reasoning: str | None
+    classifier_provider: str | None
     retrieved_policy: list[dict[str, Any]] | None
     plan_tool_name: str | None
     plan_arguments: dict[str, Any] | None
+    planner_provider: str | None
     risk_level: RiskLevel | None
     risk_flags: list[str] | None
     tool_execution_id: uuid.UUID | None

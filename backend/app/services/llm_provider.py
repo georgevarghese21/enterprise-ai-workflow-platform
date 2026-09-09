@@ -129,6 +129,19 @@ class ToolPlan(BaseModel):
 
 
 class LLMProvider(Protocol):
+    @property
+    def provider_name(self) -> str:
+        """Which provider actually answered - "mock", "anthropic", "ollama",
+        or "groq". For `CascadeLLMProvider` this varies per call (whichever
+        one actually handled the most recent `classify()`), so callers that
+        care which provider produced a given result (e.g. `app.agents.nodes`
+        logging it to the audit trail) should read this right after calling
+        `classify`/`plan`, not cache it. Declared read-only (a property) so
+        both a plain class attribute (every concrete provider but Cascade)
+        and an actual `@property` (Cascade) satisfy this Protocol.
+        """
+        ...
+
     def classify(self, raw_query: str) -> RequestClassification: ...
     def plan(
         self, intent: RequestIntent, raw_query: str, known_resource_names: list[str]
@@ -184,6 +197,8 @@ _DESTINATION_RE = re.compile(r"\bto\s+([A-Z][\w'-]*(?:\s+[A-Z][\w'-]*)*)")
 
 class MockLLMProvider:
     """Deterministic keyword-rule classifier/planner; makes no external calls."""
+
+    provider_name = "mock"
 
     def classify(self, raw_query: str) -> RequestClassification:
         text = raw_query.lower()
@@ -295,6 +310,8 @@ def _build_planning_prompt(
 class AnthropicLLMProvider:
     """Real classifier backed by the Claude API, using structured outputs."""
 
+    provider_name = "anthropic"
+
     def __init__(self) -> None:
         import anthropic
 
@@ -343,6 +360,8 @@ class OllamaLLMProvider:
     `format` field accepts a JSON schema) so the response always validates
     against `RequestClassification`, the same as the other providers.
     """
+
+    provider_name = "ollama"
 
     def __init__(self) -> None:
         import httpx
@@ -412,6 +431,8 @@ class GroqLLMProvider:
     as text in the prompt instead, and the response is validated against
     the Pydantic model afterward the same way as every other provider.
     """
+
+    provider_name = "groq"
 
     def __init__(self) -> None:
         import httpx
@@ -505,6 +526,10 @@ class CascadeLLMProvider:
         self._mock = MockLLMProvider()
         self._fallback = fallback if fallback is not None else GroqLLMProvider()
         self._escalated = False
+
+    @property
+    def provider_name(self) -> str:
+        return self._fallback.provider_name if self._escalated else self._mock.provider_name
 
     def classify(self, raw_query: str) -> RequestClassification:
         result = self._mock.classify(raw_query)

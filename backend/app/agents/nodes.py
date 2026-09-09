@@ -59,6 +59,7 @@ class WorkflowNodes:
             "intent": result.intent,
             "confidence": result.confidence,
             "reasoning": result.reasoning,
+            "classifier_provider": self.llm.provider_name,
             "status": WorkflowStatus.CLASSIFIED,
         }
 
@@ -88,6 +89,7 @@ class WorkflowNodes:
             "plan_tool_name": tool_plan.tool_name,
             "plan_arguments": tool_plan.arguments,
             "plan_notes": tool_plan.notes,
+            "planner_provider": self.llm.provider_name,
             "status": WorkflowStatus.PLANNED,
         }
 

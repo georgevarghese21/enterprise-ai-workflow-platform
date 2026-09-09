@@ -154,6 +154,8 @@ def test_groq_provider_requires_api_key(monkeypatch):
 
 
 class _FakeFallbackProvider:
+    provider_name = "fake-fallback"
+
     def __init__(self) -> None:
         self.classify_calls = 0
         self.plan_calls = 0
@@ -183,6 +185,7 @@ def test_cascade_uses_mock_when_confident():
 
     assert result.intent == RequestIntent.DATA_ACCESS
     assert fallback.classify_calls == 0
+    assert provider.provider_name == "mock"
 
 
 def test_cascade_escalates_to_fallback_when_unconfident():
@@ -195,6 +198,7 @@ def test_cascade_escalates_to_fallback_when_unconfident():
     provider = CascadeLLMProvider(fallback=fallback)
 
     result = provider.classify("I lost my laptop, what should I do?")
+    assert provider.provider_name == "fake-fallback"
 
     assert result.intent == RequestIntent.SECURITY_INCIDENT
     assert fallback.classify_calls == 1

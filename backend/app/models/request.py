@@ -40,9 +40,11 @@ class Request(Base):
     )
     classification_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     classification_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    classifier_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
     retrieved_policy: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
     plan_tool_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     plan_arguments: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    planner_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
     risk_level: Mapped[RiskLevel | None] = mapped_column(
         Enum(RiskLevel, name="risk_level_enum"), nullable=True
     )

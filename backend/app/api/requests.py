@@ -98,6 +98,7 @@ def classify_request(request_id: UUID, db: Session = Depends(get_db)) -> Request
     request.intent = result.intent
     request.classification_confidence = result.confidence
     request.classification_reasoning = result.reasoning
+    request.classifier_provider = provider.provider_name
     request.status = WorkflowStatus.CLASSIFIED
     db.commit()
     db.refresh(request)

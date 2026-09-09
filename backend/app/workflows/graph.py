@@ -96,6 +96,7 @@ def apply_run_result(request: Request, final_state: WorkflowState) -> None:
     request.intent = final_state.get("intent")
     request.classification_confidence = final_state.get("confidence")
     request.classification_reasoning = final_state.get("reasoning")
+    request.classifier_provider = final_state.get("classifier_provider")
     # Not `X or None`: the graph's initial state always seeds these as
     # `[]`/`{}` (see below), so a node that legitimately ran and found
     # nothing (e.g. a plan with zero extractable arguments) is a real `{}`,
@@ -103,6 +104,7 @@ def apply_run_result(request: Request, final_state: WorkflowState) -> None:
     request.retrieved_policy = final_state.get("retrieved_chunks")
     request.plan_tool_name = final_state.get("plan_tool_name")
     request.plan_arguments = final_state.get("plan_arguments")
+    request.planner_provider = final_state.get("planner_provider")
     request.risk_level = final_state.get("risk_level")
     request.risk_flags = final_state.get("risk_flags")
     if final_state.get("tool_execution_id"):
@@ -179,9 +181,11 @@ def run_request_resume(db: Session, request: Request, decision: str) -> Workflow
         "intent": request.intent,
         "confidence": request.classification_confidence,
         "reasoning": request.classification_reasoning,
+        "classifier_provider": request.classifier_provider,
         "retrieved_chunks": request.retrieved_policy or [],
         "plan_tool_name": request.plan_tool_name,
         "plan_arguments": request.plan_arguments or {},
+        "planner_provider": request.planner_provider,
         "risk_level": request.risk_level,
         "risk_flags": request.risk_flags or [],
         "tool_execution_id": request.tool_execution_id,

@@ -23,6 +23,10 @@ class WorkflowState(TypedDict, total=False):
     intent: RequestIntent | None
     confidence: float | None
     reasoning: str | None
+    # Which LLMProvider actually answered - "mock", "anthropic", "ollama", or
+    # "groq". Mostly interesting for LLM_MODE=cascade, where this varies per
+    # request depending on whether the mock was confident enough on its own.
+    classifier_provider: str | None
 
     # Set by `retrieve_policy`.
     retrieved_chunks: list[dict[str, Any]]
@@ -31,6 +35,7 @@ class WorkflowState(TypedDict, total=False):
     plan_tool_name: str | None
     plan_arguments: dict[str, Any]
     plan_notes: str
+    planner_provider: str | None
 
     # Set by `risk_check`.
     risk_level: RiskLevel | None
