@@ -84,6 +84,33 @@ def _run_graph_with_events(graph: Any, initial_state: WorkflowState, db: Session
     return state  # type: ignore[return-value]
 
 
+def apply_run_result(request: Request, final_state: WorkflowState) -> None:
+    """Write a graph run's final state back onto its `Request` row.
+
+    Shared by `app.api.requests`, `app.web.routes`, and
+    `app.evaluation.runner` so "what a run produced" and "how that gets
+    persisted" stay defined in exactly one place. Does not commit - the
+    caller controls the transaction (e.g. so it can also write an
+    `approval_decision` event and commit both together).
+    """
+    request.intent = final_state.get("intent")
+    request.classification_confidence = final_state.get("confidence")
+    request.classification_reasoning = final_state.get("reasoning")
+    # Not `X or None`: the graph's initial state always seeds these as
+    # `[]`/`{}` (see below), so a node that legitimately ran and found
+    # nothing (e.g. a plan with zero extractable arguments) is a real `{}`,
+    # not "this step never ran".
+    request.retrieved_policy = final_state.get("retrieved_chunks")
+    request.plan_tool_name = final_state.get("plan_tool_name")
+    request.plan_arguments = final_state.get("plan_arguments")
+    request.risk_level = final_state.get("risk_level")
+    request.risk_flags = final_state.get("risk_flags")
+    if final_state.get("tool_execution_id"):
+        request.tool_execution_id = final_state["tool_execution_id"]
+    request.status = final_state["status"]
+    request.final_response = final_state.get("final_response")
+
+
 def run_request_workflow(db: Session, request: Request) -> WorkflowState:
     """Run the full workflow for a request and return its final state.
 
@@ -151,6 +178,7 @@ def run_request_resume(db: Session, request: Request, decision: str) -> Workflow
         "raw_query": request.raw_query,
         "intent": request.intent,
         "confidence": request.classification_confidence,
+        "reasoning": request.classification_reasoning,
         "retrieved_chunks": request.retrieved_policy or [],
         "plan_tool_name": request.plan_tool_name,
         "plan_arguments": request.plan_arguments or {},

@@ -14,7 +14,7 @@ from app.schemas.request import ApprovalDecisionRequest, RequestCreate, RequestR
 from app.schemas.workflow_event import WorkflowEventRead
 from app.services.audit import record_workflow_event
 from app.services.llm_provider import get_llm_provider
-from app.workflows.graph import run_request_resume, run_request_workflow
+from app.workflows.graph import apply_run_result, run_request_resume, run_request_workflow
 
 router = APIRouter(prefix="/api/requests", tags=["requests"])
 
@@ -117,23 +117,7 @@ def run_request_workflow_endpoint(request_id: UUID, db: Session = Depends(get_db
         raise HTTPException(status_code=404, detail="Request not found")
 
     final_state = run_request_workflow(db, request)
-
-    request.intent = final_state.get("intent")
-    request.classification_confidence = final_state.get("confidence")
-    request.classification_reasoning = final_state.get("reasoning")
-    # Not `X or None`: the graph's initial state always seeds these as `[]`/`{}`
-    # (see run_request_workflow), so a node that legitimately ran and found
-    # nothing (e.g. a plan with zero extractable arguments) is a real `{}`,
-    # not "this step never ran" - collapsing it to NULL broke templates that
-    # call `.items()`/iterate on it downstream.
-    request.retrieved_policy = final_state.get("retrieved_chunks")
-    request.plan_tool_name = final_state.get("plan_tool_name")
-    request.plan_arguments = final_state.get("plan_arguments")
-    request.risk_level = final_state.get("risk_level")
-    request.risk_flags = final_state.get("risk_flags")
-    request.tool_execution_id = final_state.get("tool_execution_id")
-    request.status = final_state["status"]
-    request.final_response = final_state.get("final_response")
+    apply_run_result(request, final_state)
     db.commit()
     db.refresh(request)
     return request
@@ -166,10 +150,7 @@ def _resolve_approval(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    request.status = final_state["status"]
-    request.final_response = final_state.get("final_response")
-    if final_state.get("tool_execution_id"):
-        request.tool_execution_id = final_state["tool_execution_id"]
+    apply_run_result(request, final_state)
     request.approver_employee_id = payload.approver_employee_id
     request.approval_notes = payload.notes
     request.approved_at = datetime.now(UTC)

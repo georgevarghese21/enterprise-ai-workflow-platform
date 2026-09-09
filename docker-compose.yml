@@ -28,7 +28,10 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
-      - ./data:/data:ro
+      # Writable (not :ro): the Phase 9 evaluation harness writes its
+      # results.json report under data/evaluation/, alongside the
+      # read-only-in-spirit (but not enforced) policy documents it also reads.
+      - ./data:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

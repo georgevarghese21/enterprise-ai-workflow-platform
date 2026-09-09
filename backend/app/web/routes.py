@@ -28,7 +28,7 @@ from app.models.resource import Resource
 from app.models.tool_execution import ToolExecution
 from app.models.workflow_event import WorkflowEvent
 from app.services.audit import record_workflow_event
-from app.workflows.graph import run_request_resume, run_request_workflow
+from app.workflows.graph import apply_run_result, run_request_resume, run_request_workflow
 
 router = APIRouter(tags=["web"])
 
@@ -187,19 +187,7 @@ def run_request_web(
     req = _get_request_or_404(db, request_id)
 
     final_state = run_request_workflow(db, req)
-    req.intent = final_state.get("intent")
-    req.classification_confidence = final_state.get("confidence")
-    req.classification_reasoning = final_state.get("reasoning")
-    # See the matching comment in app.api.requests.run_request_workflow_endpoint:
-    # not `X or None`, since the graph's initial state seeds these as `[]`/`{}`.
-    req.retrieved_policy = final_state.get("retrieved_chunks")
-    req.plan_tool_name = final_state.get("plan_tool_name")
-    req.plan_arguments = final_state.get("plan_arguments")
-    req.risk_level = final_state.get("risk_level")
-    req.risk_flags = final_state.get("risk_flags")
-    req.tool_execution_id = final_state.get("tool_execution_id")
-    req.status = final_state["status"]
-    req.final_response = final_state.get("final_response")
+    apply_run_result(req, final_state)
     db.commit()
     db.refresh(req)
 
@@ -256,10 +244,7 @@ def _resolve_approval_web(
             context=_request_card_context(db, req, error=error),
         )
 
-    req.status = final_state["status"]
-    req.final_response = final_state.get("final_response")
-    if final_state.get("tool_execution_id"):
-        req.tool_execution_id = final_state["tool_execution_id"]
+    apply_run_result(req, final_state)
     req.approver_employee_id = approver_employee_id
     req.approval_notes = notes
     req.approved_at = datetime.now(UTC)

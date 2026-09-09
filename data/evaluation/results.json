@@ -1,0 +1,100 @@
+{
+  "generated_at": "2026-09-08T14:19:45.627913+00:00",
+  "metrics": [
+    {
+      "name": "Intent classification accuracy",
+      "correct": 20,
+      "applicable": 22,
+      "percentage": 90.9090909090909,
+      "misses": [
+        "hard_lost_laptop_misclassified",
+        "hard_nonstandard_equipment_no_keyword"
+      ]
+    },
+    {
+      "name": "Tool selection accuracy",
+      "correct": 20,
+      "applicable": 20,
+      "percentage": 100.0,
+      "misses": []
+    },
+    {
+      "name": "Risk classification accuracy",
+      "correct": 20,
+      "applicable": 20,
+      "percentage": 100.0,
+      "misses": []
+    },
+    {
+      "name": "Approval routing accuracy",
+      "correct": 20,
+      "applicable": 20,
+      "percentage": 100.0,
+      "misses": []
+    },
+    {
+      "name": "RAG recall@1",
+      "correct": 12,
+      "applicable": 21,
+      "percentage": 57.142857142857146,
+      "misses": [
+        "it_sw_preapproved_auto",
+        "travel_domestic_auto",
+        "travel_missing_cost_escalation",
+        "travel_international_pending",
+        "expense_under_100_auto",
+        "expense_100_1000_pending",
+        "expense_over_1000_pending",
+        "time_off_info",
+        "hard_nonstandard_equipment_no_keyword"
+      ]
+    },
+    {
+      "name": "RAG recall@3",
+      "correct": 17,
+      "applicable": 21,
+      "percentage": 80.95238095238095,
+      "misses": [
+        "travel_domestic_auto",
+        "travel_missing_cost_escalation",
+        "travel_international_pending",
+        "time_off_info"
+      ]
+    },
+    {
+      "name": "RAG recall@5",
+      "correct": 18,
+      "applicable": 21,
+      "percentage": 85.71428571428571,
+      "misses": [
+        "travel_domestic_auto",
+        "travel_missing_cost_escalation",
+        "travel_international_pending"
+      ]
+    },
+    {
+      "name": "Workflow completion rate",
+      "correct": 22,
+      "applicable": 22,
+      "percentage": 100.0,
+      "misses": []
+    },
+    {
+      "name": "Supported-answer rate",
+      "correct": 20,
+      "applicable": 22,
+      "percentage": 90.9090909090909,
+      "misses": [
+        "time_off_info",
+        "hard_lost_laptop_misclassified"
+      ]
+    },
+    {
+      "name": "Safe-routing rate",
+      "correct": 11,
+      "applicable": 11,
+      "percentage": 100.0,
+      "misses": []
+    }
+  ]
+}

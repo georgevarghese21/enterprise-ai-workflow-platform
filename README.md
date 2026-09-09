@@ -8,9 +8,9 @@ human-in-the-loop approval, audit logging, and an evaluation harness — not a c
 > **NovaTech, its employees, policies, and internal APIs are entirely fictional.**
 > They exist only to give this project a realistic enterprise setting.
 
-This README grows with each implementation phase. It currently reflects **Phase 8**.
+This README grows with each implementation phase. It currently reflects **Phase 9**.
 
-## Status: Phase 8 — Server-rendered frontend
+## Status: Phase 9 — Evaluation harness
 
 What exists so far:
 
@@ -163,9 +163,25 @@ What exists so far:
 - pytest suite (88 tests) additionally covering the web routes: page rendering, the
   new-request form and redirect, the run/approve/reject htmx endpoints (including the
   incomplete-plan error path rendering inline instead of crashing), and the status filter.
+- An evaluation harness (Phase 9): `app/evaluation/` runs a hand-written 22-case test set
+  through the real workflow against a real database and reports intent classification,
+  tool selection, risk classification, and approval routing accuracy; RAG recall@1/3/5;
+  workflow completion rate; a supported-answer rate (is the final response backed by a
+  meaningfully relevant retrieved chunk, not just any chunk); and a safe-routing rate (did
+  anything that should have required human review get auto-completed instead). See the
+  "Evaluation" section below for real, generated numbers from an actual run - not
+  aspirational placeholders - plus what they reveal about the mock classifier and mock
+  embedding provider's real limitations.
+- Along the way, a shared `apply_run_result` helper (`app/workflows/graph.py`) replaced
+  three near-identical copies of "write a graph run's final state back onto its Request
+  row" that had accumulated across `app/api/requests.py`, `app/web/routes.py`, and now the
+  evaluation runner - and while unifying them, fixed a real bug where the resume/approval
+  path never carried `classification_reasoning` forward, silently wiping it to `NULL` on
+  every approval.
+- pytest suite (98 tests) additionally covering the evaluation harness's pure metric
+  functions and the test-case loader.
 
-Not yet implemented (later phases): the evaluation harness and CI/CD polish. See the
-phase plan below.
+Not yet implemented (later phases): CI/CD polish. See the phase plan below.
 
 ## Architecture (target — will fill in as phases land)
 
@@ -210,12 +226,11 @@ backend/
     db/           session, declarative base, seed data
     models/       SQLAlchemy models
     schemas/      Pydantic request/response models
-    services/      (later) business logic
-    agents/        (later) LangGraph nodes
+    services/      LLM provider abstraction, tool-execution persistence, audit logging
     tools/          mock enterprise tools (data access, IT tickets, travel, expenses)
     rag/            embeddings, chunking, ingestion, retrieval
     agents/         LangGraph node implementations and shared workflow state
-    evaluation/     (later) evaluation harness
+    evaluation/     evaluation harness: test-case loader, metrics, runner, report
     workflows/      LangGraph graph definition (classify -> ... -> respond)
     web/            server-rendered frontend: routes.py, Jinja2 templates, static CSS
     main.py
@@ -223,7 +238,7 @@ backend/
   tests/           pytest suite
 data/
   policies/        fictional NovaTech policy documents (markdown, source for RAG)
-  evaluation/      (later) evaluation test cases
+  evaluation/      evaluation test set (test_cases.json) and generated results.json
 docker-compose.yml
 ```
 
@@ -304,17 +319,79 @@ as a Compose environment override, and re-run `docker compose up --build`.
 6. ✅ Human-in-the-loop approvals with workflow pause/resume
 7. ✅ Audit logging and workflow timeline
 8. ✅ Frontend (server-rendered FastAPI + Jinja2 + htmx, in place of React + TypeScript)
-9. Evaluation harness with real, generated metrics
+9. ✅ Evaluation harness with real, generated metrics
 10. Docker polish, CI/CD, documentation
 
 ## Evaluation
 
-A real evaluation harness (Phase 9) will measure intent classification accuracy, tool
-selection accuracy, risk classification accuracy, approval routing accuracy, RAG
-recall@1/3/5, workflow completion rate, unsupported-answer rate, and unsafe-action rate
-against a hand-written test set. No metrics are reported until they can be generated
-from an actual run — none are published yet.
+`backend/app/evaluation/` is a harness that runs a hand-written, 22-case test set
+(`data/evaluation/test_cases.json`) through the *real* workflow
+(`run_request_workflow`, against a real seeded database - nothing here is a
+simulation beyond whatever `LLM_MODE=mock` already is) and reports the metrics named
+in the phase plan. Run it with:
+
+```bash
+docker compose exec backend python -m app.evaluation.runner
+```
+
+against the seeded dev database (or any `DATABASE_URL` with the standard seed data
+loaded). It prints a report to stdout and writes `data/evaluation/results.json`.
+
+**Numbers below are from an actual run** (2026-09-08, `LLM_MODE=mock`) - not aspirational:
+
+| Metric | Result |
+| --- | --- |
+| Intent classification accuracy | 20/22 (91%) |
+| Tool selection accuracy | 20/20 (100%) |
+| Risk classification accuracy | 20/20 (100%) |
+| Approval routing accuracy | 20/20 (100%) |
+| RAG recall@1 | 12/21 (57%) |
+| RAG recall@3 | 17/21 (81%) |
+| RAG recall@5 | 18/21 (86%) |
+| Workflow completion rate | 22/22 (100%) |
+| Supported-answer rate | 20/22 (91%) |
+| Safe-routing rate | 11/11 (100%) |
+
+Two real findings worth calling out, not just the numbers:
+
+- **The two intent misclassifications are deliberate, not noise.** The test set
+  includes two "known hard case" queries (`hard_lost_laptop_misclassified`,
+  `hard_nonstandard_equipment_no_keyword`) chosen specifically to trip up the mock
+  keyword-rule classifier - e.g. "I lost my laptop" hits both the IT_EQUIPMENT keyword
+  `laptop` and the SECURITY_INCIDENT keyword `lost my laptop` with equal (1-hit) scores,
+  and the classifier only overturns its current best guess on a *strict* improvement, so
+  whichever intent it checks first (IT_EQUIPMENT, per dict order in
+  `app/services/llm_provider.py`) wins the tie. Everything downstream of a
+  misclassification is excluded from scoring for that case (tool/risk/approval-routing
+  accuracy), since grading a decision built on the wrong premise wouldn't mean anything -
+  see the applicability rules documented in `app/evaluation/metrics.py`.
+- **RAG recall@1 (57%) is the weakest number here, and it's real.** Manually inspecting
+  the misses shows the mock embedding provider (dependency-free feature-hashing
+  bag-of-words, chosen so RAG never needs an external API call - see Phase 2) sometimes
+  ranks a wrong document first with real confidence: a domestic-travel-booking query
+  ranks `security-incident-and-acceptable-use-policy.md` above
+  `travel-and-expense-policy.md` at a 0.398 score. Recall climbs to 86% by k=5, so the
+  right document is usually *somewhere* in what the workflow retrieves (which currently
+  asks for `top_k=3` - see `retrieve_policy` in `app/agents/nodes.py`) - just not
+  reliably first. Swapping in a real embedding provider behind the same
+  `app.rag.embeddings` interface used for `LLM_MODE=anthropic`/`ollama` would be the
+  obvious next step to close this gap; the mock provider was always meant to unblock
+  everything else built on top of it (Phases 3-9), not to be a good ranker.
+- **`da_medium_pending` and `expense_100_1000_pending` are notable "correct but
+  informationally thin" cases.** Both correctly end up `AWAITING_APPROVAL` (approval
+  routing accuracy counts them right), but `risk_check` only bumps `risk_level` above
+  `LOW` for HIGH-sensitivity data access or expenses over $1,000 - not for the
+  MEDIUM-sensitivity / $100-$1,000 tiers that still require a human to sign off per the
+  tool's own rules. So `risk_level` alone understates how many requests actually need
+  review; `status == AWAITING_APPROVAL` is the reliable signal, `risk_level` is
+  supplementary color. Worth tightening in a future pass over `risk_check`.
+
+Re-running the harness adds 22 fresh `Request`/`tool_executions`/`workflow_events` rows
+to whatever database it's pointed at each time (it exercises the real system, so this is
+expected) - point it at a disposable database, or don't worry about the extra rows in a
+dev database.
 
 ## Screenshots
 
-_To be added once the frontend (Phase 8) exists._
+_Text-based; see "Using the web UI" above and the templates under
+`backend/app/web/templates/` - a screenshot pass could be added later._
